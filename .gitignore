@@ -1,0 +1,21 @@
+# Local measurements and build outputs
+*.csv
+*.log
+*.elf
+*.hex
+*.bin
+*.map
+build/
+.pio/
+__pycache__/
+*.pyc
+# Credentials and editor-local files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
