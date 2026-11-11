@@ -46,6 +46,31 @@ Before enabling HR, complete the GY board interface checks in the team plan. The
 photographs identify the five-pin GY-MAX30102; they do not replace voltage measurements.
 No SpO2 calculation is implemented. Medical exercise targets are not generated.
 
+## Arduino IDE setup and missing-library errors
+
+Install libraries on each teammate's computer; downloading this repository does not install them.
+
+For the station OLED:
+1. In Arduino IDE, open **Sketch > Include Library > Manage Libraries** (or press **Ctrl+Shift+I** on Windows).
+2. Search for **U8g2**.
+3. Install **U8g2 by oliver**. Version **2.37.1** was used for the recorded builds.
+4. Click **Verify** again.
+
+`U8x8lib.h` is a header supplied by U8g2. If compilation says
+`U8x8lib.h: No such file or directory`, the IDE cannot find that library.
+Keep `#include <U8x8lib.h>` in the sketch and install the full library.
+If it is already marked Installed, restart the IDE and verify again.
+
+To test the station through Serial without the OLED library, change
+`#define ENABLE_OLED 1` to `#define ENABLE_OLED 0` in
+`HoldStation/Config.h`. The display is disabled in this mode.
+
+For the wearable, install **SparkFun MAX3010x Pulse and Proximity Sensor Library**
+before setting `ENABLE_HEART_RATE` to `1`; complete the electrical checks first.
+
+References: [Arduino library installation](https://support.arduino.cc/hc/en-us/articles/5145457742236-Install-libraries-in-the-Arduino-IDE)
+and [U8g2 source](https://github.com/olikraus/u8g2).
+
 ## Save data
 
 Serial Monitor does not save a file automatically. Close it before using the same port:
@@ -72,7 +97,7 @@ Do not describe a passing build as proof of exercise measurement accuracy.
 
 ## Team Git workflow
 
-The team repository is **https://github.com/Yousam2321/ece198-prototype** (private).
+The team repository is **https://github.com/Yousam2321/ece198-prototype**.
 See [GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) for cloning, branches and reviews.
 
 No open-source license has been chosen on the team's behalf. Third-party libraries are
