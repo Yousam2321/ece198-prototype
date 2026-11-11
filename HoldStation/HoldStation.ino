@@ -141,25 +141,37 @@ void readCommands() {
     else commandLength=0;
   }
 }
+// Cache each padded row so unchanged text is not sent repeatedly.
+// Drawing a complete padded row also erases leftover characters without blanking it first.
+#if ENABLE_OLED
+void writeDisplayLine(uint8_t row, const char* text) {
+  static char previous[8][17] = {};
+  char padded[17];
+  uint8_t i=0;
+  while(i<16 && text[i]){padded[i]=text[i];++i;}
+  while(i<16)padded[i++]=' ';
+  padded[16]='\0';
+  if(strcmp(previous[row],padded)==0)return;
+  oled.drawString(0,row,padded);
+  memcpy(previous[row],padded,sizeof(padded));
+}
+#endif
 // Text-only U8x8 avoids a large framebuffer on the memory-limited Uno R3.
 void updateDisplay() {
 #if ENABLE_OLED
-  // U8x8 writes text directly; avoids a 1024-byte framebuffer on the R3.
   char text[17];
-  oled.clearLine(0);oled.drawString(0,0,profile==0?"WALL SIT":"PLANK");
-  oled.clearLine(1);oled.drawString(0,1,calibrating?"CALIBRATING":stateName(session.state));
+  writeDisplayLine(0,profile==0?"WALL SIT":"PLANK");
+  writeDisplayLine(1,calibrating?"CALIBRATING":stateName(session.state));
   snprintf(text,sizeof(text),"Active %lus",(unsigned long)(session.active/1000));
-  oled.clearLine(2);oled.drawString(0,2,text);
+  writeDisplayLine(2,text);
   snprintf(text,sizeof(text),"In band %lus",(unsigned long)(rangeTimer.total/1000));
-  oled.clearLine(3);oled.drawString(0,3,text);
-  oled.clearLine(4);
-  if(distanceValid){snprintf(text,sizeof(text),"Range %ucm",(unsigned int)(distanceCm+0.5f));oled.drawString(0,4,text);}
-  else oled.drawString(0,4,"NO VALID ECHO");
-  oled.clearLine(5);
-  if(calibrated){snprintf(text,sizeof(text),"Ref %ucm +/-%u",(unsigned int)(targetCm+0.5f),(unsigned int)toleranceCm);oled.drawString(0,5,text);}
-  else oled.drawString(0,5,"HOLD MODE TO CAL");
-  oled.clearLine(6);oled.drawString(0,6,calibrated?(inside?"WITHIN BAND":"OUTSIDE BAND"):"NEEDS REFERENCE");
-  oled.clearLine(7);oled.drawString(0,7,"GO=start/pause");
+  writeDisplayLine(3,text);
+  if(distanceValid){snprintf(text,sizeof(text),"Range %ucm",(unsigned int)(distanceCm+0.5f));writeDisplayLine(4,text);}
+  else writeDisplayLine(4,"NO VALID ECHO");
+  if(calibrated){snprintf(text,sizeof(text),"Ref %ucm +/-%u",(unsigned int)(targetCm+0.5f),(unsigned int)toleranceCm);writeDisplayLine(5,text);}
+  else writeDisplayLine(5,"HOLD MODE TO CAL");
+  writeDisplayLine(6,calibrated?(inside?"WITHIN BAND":"OUTSIDE BAND"):"NEEDS REFERENCE");
+  writeDisplayLine(7,"GO=start/pause");
 #endif
 }
 void setup() {
