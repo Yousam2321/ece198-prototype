@@ -29,3 +29,14 @@ Use the four task pages in docs/Team_Build_and_Test_Plan.pdf to record real resu
 
 The shared core was given extra explanatory comments after compilation. Its code
 was unchanged; the portable test runner was rerun successfully on those final files.
+
+## OLED refresh fix — November 11, 2026
+
+The station now pads each row to 16 characters and only writes rows whose text
+changes. It no longer clears each line before rewriting it every 250 ms.
+The default Uno R3 / SH1106 configuration compiled successfully with the same
+installed core and U8g2 library: 16,704 bytes flash, 1,558 bytes static RAM.
+The row cache costs 136 bytes of static RAM; 490 bytes remain for stack/runtime
+allocations. The compiler reports low available memory, so runtime stability
+still needs hardware testing. Distance acquisition and calibration are unchanged.
+The build used installed dependencies despite a failed network index refresh.
