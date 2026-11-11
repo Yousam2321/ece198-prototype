@@ -66,7 +66,7 @@ To test the station through Serial without the OLED library, change
 `HoldStation/Config.h`. The display is disabled in this mode.
 
 For the wearable, install **SparkFun MAX3010x Pulse and Proximity Sensor Library**
-before setting `ENABLE_HEART_RATE` to `1`; complete the electrical checks first.
+before setting `ENABLE_MAX30102` to `1`; complete the electrical checks first.
 
 References: [Arduino library installation](https://support.arduino.cc/hc/en-us/articles/5145457742236-Install-libraries-in-the-Arduino-IDE)
 and [U8g2 source](https://github.com/olikraus/u8g2).
