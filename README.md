@@ -13,10 +13,10 @@ Pull origin** for later updates. Open the sketch from the cloned folder and clic
 Upload in Arduino IDE. See [the step-by-step Git workflow](docs/GIT_WORKFLOW.md).
 Fetching code alone does not change the program running on the Uno.
 
-## Verify the station version: B2.2
+## Verify the station version: B2.3
 
-The OLED title must show **WALL SIT B2.2** or **PLANK B2.2**.
-Serial command `version` prints `# ECE198_B_2.2`.
+The OLED title must show **WALL SIT B2.3** or **PLANK B2.3**.
+Serial command `version` prints `# ECE198_B_2.3`.
 Download/extract the current repository and open the new
 `HoldStation/HoldStation.ino`, keeping its entire folder intact.
 Uploading a previously opened sketch from an older folder does not update it.
@@ -30,7 +30,7 @@ A long GO in IDLE/COUNTDOWN/DONE cannot create/finish a session.
 At DONE, the OLED writes a fixed summary once: final times, save success/failure,\nreference, and next actions. Live distance and inside/outside changes no longer\nrewrite the completed screen. It stays visible until a new attempt/mode/calibration.
 Serial button events `go_short` and `go_long` identify what the hardware detected.
 
-If B2.2 shows RUNNING with WITHIN BAND but its counter stays at zero,
+If B2.3 shows RUNNING with WITHIN BAND but its counter stays at zero,
 capture several DATA rows plus button events; the sample_gap_ms field helps
 distinguish intermittent samples from a session-control problem.
 
@@ -98,6 +98,23 @@ before setting `ENABLE_MAX30102` to `1`; complete the electrical checks first.
 
 References: [Arduino library installation](https://support.arduino.cc/hc/en-us/articles/5145457742236-Install-libraries-in-the-Arduino-IDE)
 and [U8g2 source](https://github.com/olikraus/u8g2).
+
+## Erase saved history using the buttons (B2.3)
+
+1. Finish the current session, or stay in IDLE.
+2. Hold **GO and MODE together for at least three seconds**.
+3. The OLED shows **ERASE HISTORY?**. Release both buttons.
+4. **Tap GO** to erase all saved summaries, or **tap MODE** to cancel.
+5. Wait for **HISTORY CLEARED** before disconnecting power.
+
+The opening hold and its release cannot confirm deletion. A short two-button hold
+is ignored. The erase menu is unavailable during RUNNING, PAUSED, COUNTDOWN or
+calibration. Erasing resets the session to IDLE while retaining calibration and
+tolerance. CSV exports on your computer are untouched. The archive's EEPROM bytes
+0..419 are cleared; session IDs restart at 1. Export files from before/after an erase
+are separate histories, so IDs alone must not be treated as globally unique.
+Erasing is not atomic across a power cut; keep power connected until confirmation.
+Use the next ordinary GO/MODE action to leave the confirmation/result display.
 
 ## Station session saving and restart
 
