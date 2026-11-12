@@ -116,9 +116,9 @@ void measureDistance(uint32_t now) {
 }
 void go() {
   if(calibrating){emit("EVENT",F("wait_for_calibration"));return;}
-  if(session.state==IDLE && !calibrated){emit("EVENT",F("calibrate_first"));return;}
-  // One short press from DONE clears old timers and starts a fresh countdown.
+  // A completed session never toggles back to DONE on the next short press.
   if(session.state==DONE)resetSession();
+  if(session.state==IDLE && !calibrated){emit("EVENT",F("calibrate_first"));return;}
   session.go(millis());rangeTimer.breakContinuity();
   emit("EVENT",F("button_or_go"));
 }
@@ -165,7 +165,8 @@ void handleCommand(char* line) {
   else if(!strncmp(line,"band ",5) && (session.state==IDLE || session.state==DONE)){
     float n=atof(line+5);if(n>=1 && n<=20){toleranceCm=n;emit("EVENT",F("band_changed_cm"));}
   }
-  else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM history"));
+  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_2.1"));
+  else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM history version"));
   else emit("EVENT",F("command_not_available"));
 }
 void readCommands() {
@@ -196,11 +197,12 @@ void writeDisplayLine(uint8_t row, const char* text) {
 void updateDisplay() {
 #if ENABLE_OLED
   char text[17];
-  writeDisplayLine(0,profile==0?"WALL SIT":"PLANK");
+  writeDisplayLine(0,profile==0?"WALL SIT B2.1":"PLANK B2.1");
   writeDisplayLine(1,calibrating?"CALIBRATING":stateName(session.state));
   snprintf(text,sizeof(text),"Active %lus",(unsigned long)(session.active/1000));
   writeDisplayLine(2,text);
-  snprintf(text,sizeof(text),"In band %lus",(unsigned long)(rangeTimer.total/1000));
+  snprintf(text,sizeof(text),"In band %lu.%lus",
+    (unsigned long)(rangeTimer.total/1000),(unsigned long)((rangeTimer.total%1000)/100));
   writeDisplayLine(3,text);
   if(distanceValid){snprintf(text,sizeof(text),"Range %ucm",(unsigned int)(distanceCm+0.5f));writeDisplayLine(4,text);}
   else writeDisplayLine(4,"NO VALID ECHO");
@@ -221,6 +223,7 @@ void setup() {
   oled.begin();oled.setFont(u8x8_font_chroma48medium8_r);
 #endif
   session.reset(millis());
+  Serial.println(F("# ECE198_B_2.1"));
   Serial.println(F("type,device,uptime_ms,exercise,state,active_ms,distance_cm,reference_cm,band_cm,echo_valid,inside_band,range_ms,sample_gap_ms,note"));
   emit("EVENT",F("boot_type_help_for_commands"));
 }
@@ -233,9 +236,9 @@ void loop() {
   now=millis(); // Commands/EEPROM reads may take time; sample buttons with fresh time.
   ButtonEvent a=goButton.update(digitalRead(GO_PIN)==LOW,now);
   ButtonEvent b=modeButton.update(digitalRead(MODE_PIN)==LOW,now);
-  if(a==SHORT_PRESS)go();
+  if(a==SHORT_PRESS){emit("EVENT",F("go_short"));go();}
   // Long GO is ignored in IDLE, COUNTDOWN and DONE: no empty sessions.
-  if(a==LONG_PRESS)finishSession();
+  if(a==LONG_PRESS){emit("EVENT",F("go_long"));finishSession();}
   if(b==SHORT_PRESS)chooseMode(1-profile);
   if(b==LONG_PRESS)startCalibration();
   measureDistance(now);
