@@ -83,3 +83,16 @@ The build used installed dependencies despite a failed network index refresh.
   R3/SH1106 firmware compiled: 18,912 bytes flash; 1,327 bytes static RAM;
   721 bytes left for stack/runtime. Physical flicker still needs a board check.
 - GitHub Desktop clone/fetch/pull instructions added to avoid repeated ZIP downloads.
+
+## B2.3 button-only erase
+
+- Both buttons held >=3s in IDLE/DONE open an erase confirmation. Both must be
+  released before a separate short GO can confirm; a short MODE cancels.
+- Tests cover aborted holds, cancel without mutation, release without confirmation,
+  confirmed clear from IDLE and DONE, persistence after controller recreation,
+  IDs restarting at 1, and no erase/finish/calibration from a two-button running hold.
+- OLED tests cover erase prompt and cleared feedback. Archive tests verify bytes
+  0..419 are zeroed and unrelated EEPROM addresses remain untouched.
+- Shared-core, serial-only and OLED-enabled station tests passed. Default Uno R3
+  build: 19,670 bytes flash; 1,456 bytes static RAM; 592 bytes left for runtime/stack.
+- Physical button/UI and EEPROM erase behavior still need testing on the real board.
