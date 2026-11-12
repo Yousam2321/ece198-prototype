@@ -7,31 +7,49 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-EXERCISES = {"wall_sit": "Wall sit", "plank": "Plank"}
+EXERCISES = {"wall_sit": "Wall sit", "plank": "Plank", "chest_press": "Chest press"}
 
 
-def criteria_text(targets, minimum):
-    return (f"Targets: wall sit {targets['wall_sit']:g}s; plank {targets['plank']:g}s.\n"
-            f"Good requires BOTH: recorded in-band time reaches the target AND corrected consistency is at least {minimum:g}%.\n"
-            "Corrected consistency = in-band time / (active time - final continuous out-of-band time) x 100.\n"
-            "Earlier out-of-band periods still count against consistency when followed by a return in band.\n"
-            "Pauses are excluded. The final departure (including final signal loss) is treated as exercise end.\n"
-            "No valid in-band hold or missing ending data: Cannot evaluate.\n"
-            "Missing echoes and slow sampling can reduce credited in-band time. This measures proximity to a reference, not full exercise form.\n"
-            "Progress comparisons use these same criteria, the same exercise and the same tolerance. Import order is not the actual exercise date.")
+def criteria_text(targets, minimum, rep_minimum=90):
+    goals=', '.join(f"{EXERCISES[k]} {v:g}{' good reps' if k=='chest_press' else 's'}" for k,v in targets.items())
+    return (f"Targets: {goals}.\n\n"
+            f"Wall sit / plank: Good requires BOTH the in-zone time target and at least {minimum:g}% consistency.\n"
+            "Consistency = in-band time / (active time - final continuous departure) x 100. Pauses and final departure are excluded; earlier departures followed by a return still count.\n\n"
+            f"Chest press: Good requires BOTH the good-rep target and at least {rep_minimum:g}% good reps.\n"
+            "Good-rep percentage = good reps / completed attempts x 100. Short attempts count against it. Unfinished reps discarded by the firmware do not count as attempts. Zero attempts: Cannot evaluate.\n"
+            "Each good rep reaches 80% of calibrated travel and returns within 20% of the start. Extra travel is allowed; there is no upper-travel penalty.\n\n"
+            "No valid hold or missing ending data: Cannot evaluate. Missing echoes may reduce credited results. These are distance measures, not a full-body form or medical grade.\n"
+            "Comparisons use the current confirmed goals. Changed chest calibration is flagged. Attempt order is not a calendar date.")
 
 
-def validate_criteria(targets, minimum):
-    if set(targets) != set(EXERCISES) or any(not math.isfinite(v) or v <= 0 for v in targets.values()):
-        raise ValueError("Enter a positive target duration for both exercises.")
-    if not math.isfinite(minimum) or not 0 < minimum <= 100:
-        raise ValueError("Consistency requirement must be above 0 and at most 100%.")
+def validate_criteria(targets, minimum, rep_minimum=90):
+    if not targets or not set(targets).issubset(EXERCISES) or any(not math.isfinite(v) or v <= 0 for v in targets.values()):
+        raise ValueError("Enter a positive target for the exercises you want to evaluate.")
+    if 'chest_press' in targets and (not float(targets['chest_press']).is_integer() or targets['chest_press']>65535):
+        raise ValueError("Chest-press target must be a whole number from 1 to 65535 good reps.")
+    for value,label in ((minimum,'Consistency'),(rep_minimum,'Good-rep percentage')):
+        if not math.isfinite(value) or not 0 < value <= 100:
+            raise ValueError(f"{label} requirement must be above 0 and at most 100%.")
+
+
+def normalize_rep(row):
+    item={key:int(row[key]) for key in ('session_id','active_ms','good_reps','attempts','history_id')}
+    item.update({key:float(row[key]) for key in ('start_cm','pressed_cm','last_travel_cm')})
+    item['exercise']='chest_press'
+    travel=abs(item['pressed_cm']-item['start_cm'])
+    if (item['session_id']<1 or item['history_id']<1 or not 0<=item['active_ms']<=4294967295 or
+        not 0<=item['good_reps']<=item['attempts']<=65535 or
+        any(not math.isfinite(item[k]) for k in ('start_cm','pressed_cm','last_travel_cm')) or
+        not 12<=item['start_cm']<=150 or not 12<=item['pressed_cm']<=150 or travel<10 or item['last_travel_cm']<0):
+        raise ValueError('Invalid chest-press summary. Check the exported measurements/counts.')
+    return item
 
 
 def normalize(row):
     exercise = row.get("exercise", "")
+    if exercise=="chest_press":return normalize_rep(row)
     if exercise not in EXERCISES:
-        raise ValueError("Only wall-sit and plank summaries can be evaluated.")
+        raise ValueError("Only wall-sit, plank and chest-press summaries can be evaluated.")
     def integer(key):
         raw = row.get(key, "")
         value = int(raw)
@@ -59,12 +77,24 @@ def normalize(row):
 
 def load_csv(path):
     with Path(path).open(newline="", encoding="utf-8-sig") as source:
-        rows = list(csv.DictReader(source))
-    return [normalize(row) for row in rows]
+        reader=csv.DictReader(source)
+        headers=set(reader.fieldnames or [])
+        if 'active_seconds' in headers and 'active_ms' not in headers:
+            raise ValueError('This is an older evaluated report. Open the original Arduino saved_sessions CSV instead. New evaluated exports can be re-imported.')
+        rows=list(reader)
+    try:return [normalize(row) for row in rows]
+    except KeyError as error:
+        raise ValueError(f'Missing result column: {error.args[0]}. Open the original saved-session CSV.') from None
 
 
-def evaluate(row, targets, minimum):
-    validate_criteria(targets, minimum)
+def evaluate(row, targets, minimum, rep_minimum=90):
+    validate_criteria(targets, minimum, rep_minimum)
+    if row['exercise']=='chest_press':return evaluate_reps(row,targets,rep_minimum)
+    if row['exercise'] not in targets:
+        return dict(kind='hold',status='Cannot evaluate',missing_target=True,
+                    reasons=['Set and confirm a target for this exercise.'],consistency_percent=None,
+                    in_band_seconds=row['in_band_ms']/1000,active_seconds=row['active_ms']/1000,
+                    target_seconds=None,trailing_seconds=None)
     target = targets[row["exercise"]]
     active, inside = row["active_ms"]/1000, row["in_band_ms"]/1000
     result = dict(active_seconds=active, in_band_seconds=inside, target_seconds=target,
@@ -92,6 +122,29 @@ def evaluate(row, targets, minimum):
     if not result["reasons"]:
         result["reasons"] = ["The recorded hold reached the target and met your confirmed consistency requirement."]
     return result
+
+
+def evaluate_reps(row, targets, minimum):
+    target=targets.get('chest_press')
+    attempts=row['attempts'];good=row['good_reps'];travel=abs(row['pressed_cm']-row['start_cm'])
+    result=dict(kind='reps',status='Cannot evaluate',active_seconds=row['active_ms']/1000,
+                good_reps=good,attempts=attempts,short_attempts=attempts-good,
+                good_rep_percent=100*good/attempts if attempts else None,
+                target_reps=target,remaining_reps=max(0,target-good) if target else None,
+                calibrated_travel_cm=travel,required_travel_cm=travel*.8,return_tolerance_cm=travel*.2,
+                minimum_percent=minimum,reasons=[],missing_target=target is None)
+    if target is None:result['reasons']=['Set and confirm a chest-press rep target.'];return result
+    if not attempts:result['reasons']=['No completed attempts were recorded. Repeat after checking calibration.'];return result
+    if good<target:result['reasons'].append(f'{target-good:g} more good rep'+('s' if target-good!=1 else '')+f' needed to reach {target:g}.')
+    if result['good_rep_percent']<minimum:
+        result['reasons'].append(f"Good reps were {result['good_rep_percent']:.1f}%; need {minimum:g}%.")
+    result['status']='Not good yet' if result['reasons'] else 'Good'
+    if not result['reasons']:result['reasons']=['Both the good-rep count and good-rep percentage goals were met.']
+    return result
+
+
+def attempt_number(rows,index):
+    return sum(r['exercise']==rows[index]['exercise'] for r in rows[:index+1])
 
 
 def record_key(row):
@@ -147,18 +200,33 @@ class ResultStore:
         return sorted(items, key=lambda r: (r["history_id"] is not None,
                                             r["history_id"] or 0,
                                             r["session_id"] if r["history_id"] else r["import_order"]))
-    def save_criteria(self, participant, targets, minimum):
-        validate_criteria(targets,minimum)
+    def save_criteria(self, participant, targets, minimum, rep_minimum=90):
+        validate_criteria(targets,minimum,rep_minimum)
         with self.db:
-            self.db.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (participant,json.dumps(dict(targets=targets, minimum=minimum))))
+            self.db.execute("INSERT OR REPLACE INTO settings VALUES (?,?)", (participant,json.dumps(dict(targets=targets, minimum=minimum, rep_minimum=rep_minimum))))
     def criteria(self, participant):
         row=self.db.execute("SELECT payload FROM settings WHERE participant=?",(participant,)).fetchone()
         return json.loads(row[0]) if row else None
     def close(self): self.db.close()
 
 
-def progression(rows, current_index, targets, minimum):
+def progression(rows, current_index, targets, minimum, rep_minimum=90):
     current=rows[current_index]
+    if current['exercise']=='chest_press':
+        now=evaluate(current,targets,minimum,rep_minimum)
+        earlier=[i for i in range(current_index) if rows[i]['exercise']=='chest_press' and
+                 evaluate(rows[i],targets,minimum,rep_minimum)['good_rep_percent'] is not None]
+        if not earlier or now['status']=='Cannot evaluate':return None
+        previous=evaluate(rows[earlier[-1]],targets,minimum,rep_minimum)
+        first=evaluate(rows[earlier[0]],targets,minimum,rep_minimum)
+        return dict(kind='reps',previous=previous,first=first,previous_index=earlier[-1],
+                    good_change=now['good_reps']-previous['good_reps'],
+                    percent_change=now['good_rep_percent']-previous['good_rep_percent'],
+                    first_good_change=now['good_reps']-first['good_reps'],
+                    first_percent_change=now['good_rep_percent']-first['good_rep_percent'],
+                    range_changed=abs(now['calibrated_travel_cm']-previous['calibrated_travel_cm'])>.1,
+                    first_range_changed=abs(now['calibrated_travel_cm']-first['calibrated_travel_cm'])>.1)
+
     compatible=[i for i in range(current_index) if rows[i]["exercise"]==current["exercise"] and
                 abs(rows[i]["band_cm"]-current["band_cm"]) < 0.001 and
                 evaluate(rows[i],targets,minimum)["consistency_percent"] is not None]

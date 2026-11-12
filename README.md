@@ -269,3 +269,14 @@ In any exercise, short GO pauses; hold MODE for **2 seconds** and release to ope
 CANCEL SESSION? Short GO confirms discard; short MODE returns to PAUSED. Saved
 history and calibration are kept. The OLED confirms CANCELLED / NOT SAVED.
 Chest's title is shortened to CHEST B2.6. The app and LED remain unchanged.
+
+
+### Windows app: chest press supported
+
+The updated Exercise Results executable imports raw chest CSVs or reads both
+Arduino archives, alongside existing wall-sit/plank results. Chest scoring uses a
+confirmed good-rep target and a separate good-rep percentage goal. The PDF report
+includes exercise-specific stats, graphs, reasons and progression; changed chest
+calibration is flagged, and extra travel is allowed. Existing SQLite profiles and
+hold criteria are preserved. No new firmware upload or LED change is required.
+See `desktop/README.txt` for setup and a 9/12-record verification example.

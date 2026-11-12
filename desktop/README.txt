@@ -1,53 +1,57 @@
-ECE198 Hold Results — Windows
+ECE198 Exercise Results - Windows
 
-Double-click ECE198_Results.exe. No Python installation is needed for the executable.
-
-1. Enter a participant label (for example P01), then Open profile.
-2. Open results CSV, or Read Arduino after finishing/saving a session and closing
-   Arduino Serial Monitor. Select only that participant's records and keep them.
-3. Enter the target seconds for wall sit and plank and the required consistency.
-   The prefilled 90% is an editable prototype criterion, not a clinical standard.
-4. Review & confirm shows every evaluation rule before you accept it.
-5. Select an attempt. Its exercise and number are shown above a short summary.
-   Results say whether time, consistency or both are below your confirmed goals.
-6. Clean report (PDF) lets you choose where to save a readable report with time
-   and consistency graphs, reasons, detailed stats and previous/first comparisons.
-   Export CSV keeps the spreadsheet version. Existing files are not overwritten.
-7. Visible rows switches between 7 and 10. Seven fits smaller laptop screens;
-   the whole page and the attempt list can scroll.
-8. Manage participants: search labels, select a profile, then Open selected or
-   Delete participant. Deleting asks for confirmation and removes the profile
-   itself, saved criteria and its local attempts. No empty profile is left behind.
-   Arduino records and exported CSV/PDF files are kept. The search displays up to
-   100 matches at a time, so it remains usable with thousands of participants.
-
-Stats: recorded in-band hold, target completion, active time, final ending excluded,
-assessed time, uncredited time during the hold, corrected consistency, and change
-from the previous and first comparable attempts.
-
-Good requires both the entered in-band duration target and the confirmed minimum
-consistency. There is no hidden weighted total. Earlier out-of-band periods count
-against consistency if followed by returning in band. Pauses do not count. The final
-continuous departure, including unavailable final readings, is treated as the end.
-Missing echoes/slow sampling can reduce recorded in-band time. This is measured
-proximity to a reference and duration, not a full-body posture/medical grade.
-
-New end-corrected evaluations require B2.4 firmware and new sessions. B2.3 records
-are preserved and can show raw time, but lack final-interval metadata, so corrected
-consistency is unavailable. No ending time is guessed for old records.
-
-Your participant profiles, chosen criteria and imported raw results stay on this PC:
+Close the old app, extract the download and double-click dist/ECE198_Results.exe.
+No Python installation or new Arduino upload is needed. Keep B2.5/B2.6 firmware.
+Existing profiles, history and hold criteria remain in the same local database:
 %LOCALAPPDATA%\ECE198_Results\results.sqlite3
-Repeated imports for the same participant skip matching records. Erasing Arduino
-history does not erase the PC history. Comparison uses the current confirmed rules
-for all compatible attempts; import time is not the actual exercise date. Keep
-participant selection and sensor mounting consistent. Close the app before backing
-up the database. The app does not send participant data to a server.
 
-This update changes the PC app only. Keep your working Arduino firmware.
-Close the old app before launching the new executable; existing profiles stay in
-its normal data folder and load automatically.
+1. Enter a participant label and Open profile.
+2. Open results CSV (hold or chest exports), or Read Arduino. Close Serial Monitor
+   first. Read Arduino reads both archives through one connection. Select only
+   that participant's records and Keep selected sessions. Duplicate imports skip.
+   Older firmware without chest support still supplies its hold records.
+3. Enter targets only for the exercises loaded in this profile. Hold targets use
+   seconds; chest targets use whole good-rep counts. The two percentage fields
+   are separate: hold consistency and chest good-rep percentage. Both start at
+   an editable 90%; this is a prototype setting, not a clinical recommendation.
+4. Review & confirm shows all criteria before scoring. Confirmed inputs collapse
+   to leave room for results; Change criteria opens them again. Changing criteria
+   or importing more data requires confirmation again.
+5. Select a session. The summary names its exercise and shows the precise reason
+   if it needs more time, good reps, consistency, good-rep percentage, or both.
+6. View progression shows the selected exercise's percentage. Clean report (PDF)
+   includes separate exercise sections, stats, goals, reasons, time/rep graphs,
+   and comparisons with previous/first sessions. Changed chest travel is flagged.
+7. Export evaluated CSV includes raw data, derived scores, criteria and feedback.
+   It can be re-imported without duplicating records. The PowerShell original CSV
+   remains a raw-results export. Choose new names; reports never overwrite files.
+8. Visible rows selects 7 or 10. Scroll the window on smaller screens.
+9. Manage participants searches profiles and deletes a complete local profile,
+   criteria and attempts only after confirmation. Exported files and board saves
+   stay untouched. Search is bounded for large participant lists.
+
+Hold evaluation (unchanged): BOTH in-zone duration and corrected consistency must
+reach the confirmed goals. Consistency = in-band / (active - final departure).
+Pauses and the last continuous departure are excluded; earlier excursions followed
+by return remain. Legacy records without ending metadata are preserved, unscored.
+
+Chest evaluation: BOTH good-rep count and good-rep percentage must reach the goals.
+Good-rep percentage = good reps / completed attempts. Short attempts count against
+it. Zero completed attempts is Cannot evaluate. The firmware requires 80% travel
+and return within 20%, with endpoint confirmation. Unfinished reps discarded on
+pause/dropout/finish are not recorded as attempts. Extra travel is allowed without
+a maximum-distance penalty. Active duration and travel are shown, not scored.
+Comparisons flag changed calibrated travel; they describe different movement
+conditions rather than a normalized improvement score. No hidden weighted score.
+
+Session numbers are per exercise, not dates or shared board IDs. Import/export
+and report times are not session times. These measurements do not check both arms,
+weights or full-body exercise form. Data stays on this computer; the app sends no
+participant data to a server. Close the app before backing up its SQLite database.
+
+Quick check: with a record of 9 good out of 12, goal 9 and 75% gives Good. Raising
+those goals to 10 and 90% gives Not good yet - rep count + good-rep %.
 
 Source dependencies: python -m pip install pyserial==3.5 reportlab==4.4.9
-Source version: python desktop/results_app.py
-Build on Windows: see desktop/build_windows.cmd
+Source: python desktop/results_app.py
+Windows build: desktop/build_windows.cmd
