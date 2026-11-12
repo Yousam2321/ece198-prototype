@@ -13,6 +13,7 @@
 #include <EEPROM.h>
 #include "SavedSessions.h"
 #include "HoldTiming.h"
+#define STATION_VERSION "2.3"
 #if ENABLE_OLED
 #include <Wire.h>
 #include <U8x8lib.h>
@@ -211,7 +212,7 @@ void handleCommand(char* line) {
   else if(!strncmp(line,"band ",5) && (session.state==IDLE || session.state==DONE)){
     float n=atof(line+5);if(n>=1 && n<=20){toleranceCm=n;emit("EVENT",F("band_changed_cm"));}
   }
-  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_2.3"));
+  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_" STATION_VERSION));
   else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM history version"));
   else emit("EVENT",F("command_not_available"));
 }
@@ -248,20 +249,20 @@ void updateDisplay() {
     writeDisplayLine(2,eraseWaitRelease?"Release BOTH":"GO=yes MODE=no");
     writeDisplayLine(3,"CSV files kept");
     writeDisplayLine(4,"");writeDisplayLine(5,"");writeDisplayLine(6,"");
-    writeDisplayLine(7,"B2.3");return;
+    writeDisplayLine(7,"B" STATION_VERSION);return;
   }
   if(eraseResult){
     writeDisplayLine(0,eraseResult==1?"HISTORY CLEARED":"ERASE FAILED");
     writeDisplayLine(1,"GO=next session");writeDisplayLine(2,"MODE=exercise");
     writeDisplayLine(3,"CSV files kept");
     writeDisplayLine(4,"");writeDisplayLine(5,"");writeDisplayLine(6,"");
-    writeDisplayLine(7,"B2.3");return;
+    writeDisplayLine(7,"B" STATION_VERSION);return;
   }
   // Keep the completed result still; live range/status must not redraw it.
   if(session.state==DONE && finalResultShown)return;
   if(session.state!=DONE)finalResultShown=false;
   char text[17];
-  writeDisplayLine(0,profile==0?"WALL SIT B2.3":"PLANK B2.1");
+  writeDisplayLine(0,profile==0?"WALL SIT B" STATION_VERSION:"PLANK B" STATION_VERSION);
   writeDisplayLine(1,calibrating?"CALIBRATING":stateName(session.state));
   snprintf(text,sizeof(text),"Active %lus",(unsigned long)(session.active/1000));
   writeDisplayLine(2,text);
@@ -290,7 +291,7 @@ void setup() {
   oled.begin();oled.setFont(u8x8_font_chroma48medium8_r);
 #endif
   session.reset(millis());
-  Serial.println(F("# ECE198_B_2.1"));
+  Serial.println(F("# ECE198_B_" STATION_VERSION));
   Serial.println(F("type,device,uptime_ms,exercise,state,active_ms,distance_cm,reference_cm,band_cm,echo_valid,inside_band,range_ms,sample_gap_ms,note"));
   emit("EVENT",F("boot_type_help_for_commands"));
 }
