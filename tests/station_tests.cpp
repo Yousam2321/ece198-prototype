@@ -1,12 +1,16 @@
 #include <cassert>
 #include <iostream>
+#ifndef ENABLE_OLED
 #define ENABLE_OLED 0
+#endif
 #include "stubs/Arduino.h"
 #include "stubs/EEPROM.h"
 uint32_t fakeNow=0;
 uint32_t fakePulse=0;
 int fakePins[20]={};
 FakeSerial Serial;
+unsigned int fakeOledWrites=0;
+char fakeScreen[8][17]={};
 EEPROMClass EEPROM;
 #include "../HoldStation/HoldStation.ino"
 
@@ -96,5 +100,23 @@ int main(){
     advance(1000);assert(session.state==DONE);
     pressGo(1500);assert(session.state==DONE); // Repeated long GO cannot duplicate save.
   }
+#if ENABLE_OLED
+  // Completed results are written once even when live range/inside change.
+  updateDisplay();
+  assert(finalResultShown);
+  assert(strstr(fakeScreen[4], "SAVED TO EEPROM"));
+  unsigned int resultWrites=fakeOledWrites;
+  fakePulse=0;advance(1500);updateDisplay();
+  assert(fakeOledWrites==resultWrites);
+  assert(strstr(fakeScreen[1], "DONE"));
+  pressGo(200);advance(300);
+  assert(session.state==COUNTDOWN && !finalResultShown);
+  assert(fakeOledWrites>resultWrites);
+  // Save failure stays visible as a failure, never a false saved message.
+  advance(3100);
+  // Exercise the display failure state explicitly.
+  session.finish(fakeNow);lastSaveSucceeded=false;finalResultShown=false;
+  updateDisplay();assert(strstr(fakeScreen[4], "SAVE FAILED"));
+#endif
   std::cout<<"Station restart, button, timing and EEPROM tests passed\n";
 }
