@@ -107,6 +107,38 @@ The script accepts commands, adds UTC timestamps and refuses to overwrite files.
 Start capture before calibration because opening a serial port may reset the board.
 Logs are excluded from Git by default. Use anonymous trial IDs.
 
+
+### Export saved station summaries to Excel/CSV
+
+Finish and save the current session before connecting the exporter. Close Arduino
+Serial Monitor. Opening the Uno serial port can reset the board (calibration is
+cleared), but completed EEPROM summaries remain. No firmware update is needed if
+the board already supports the `history` command.
+
+From the repository folder:
+
+```sh
+python -m pip install -r requirements.txt
+python tools/export_sessions.py --port COM4 --output saved_sessions.csv
+```
+
+Replace COM4 with the station's actual port. With no `--output`, the script chooses
+a timestamped filename. It reads the latest 20 summaries and exits. Open the CSV
+in Excel later. Each row includes session ID, exercise, active/in-band time in
+milliseconds and seconds, reference distance and tolerance. `exported_at_utc`
+is the time of export, not the session date; the Arduino has no real-time clock.
+
+Exporting does not erase the board's history. Existing files are never overwritten.
+Export before more than 20 newer sessions replace results you want to keep.
+Snapshots from separate exports can overlap; use session_id to identify duplicates
+from the same board/history. To record every future live session while connected,
+use `tools/capture_serial.py` instead.
+
+Exporter tests:
+```sh
+python -m unittest discover -s tests -p test_export_sessions.py
+```
+
 ## Tests
 
 ```sh
