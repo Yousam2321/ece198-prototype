@@ -1,44 +1,14 @@
-# Hardware used in this repository
+# Current hardware reference
 
-Use the full schematic pages and four owner checklists in Team_Build_and_Test_Plan.pdf.
-The actual accelerometer is **MMA7361**, not the initially assumed Grove ADXL335.
+| Unit | Software | Pins |
+|---|---|---|
+| Part A | `PartA/PartA.ino` | START D2, EXERCISE D3; analog X/Y/Z A0/A1/A2; LCD RS/E/D4–D7 D7/D8/D9–D12; pulse I2C SDA/SCL |
+| Part B | `HoldStation/HoldStation.ino` | GO D2, MODE D3; HC-SR04 TRIG D8/ECHO D9; OLED SDA A4/SCL A5 |
 
-## Wearable A - Uno R4 Minima
+These are separate boards: do not combine their wiring or upload one sketch over the other. Buttons connect to GND when pressed and use internal pull-ups. Keep each unit's existing working power wiring and common ground. No shield or new LED is required for this update.
 
-| MMA7361 pin | Connection |
-|---|---|
-| 3V3 and Sleep / SL | Arduino 3.3V |
-| GND, G-Select / GS, Selftest / ST | GND |
-| X / Y / Z | A0 / A1 / A2 |
-| Module 5V and 0g-Detect | Leave open in this 3.3V-powered setup |
+Part A preserves the uploaded team's LCD/accelerometer/pulse setup. See [PART_A.md](PART_A.md) for exact original mapping and tests. Use the board's labeled SDA/SCL pins; check each breakout's documented voltage interface before changing its power wiring.
 
-Wearable bare button: D2 to GND through normally open contacts. Internal pull-up is enabled.
-Do not drive the accelerometer control pins with 5V.
+Part B runs on the 5 V Uno R3. HC-SR04 VCC goes to 5 V, GND to GND. The shown four-pin OLED labels are GND/VCC/SCL/SDA; use those labels rather than assuming another module's pin order. Default driver is SH1106 at I2C address 0x3C; `HoldStation/Config.h` selects SSD1306 if appropriate. U8g2 supplies U8x8lib.h. No Grove shield is required.
 
-## GY-MAX30102
-
-The photographed board is the purple five-pin GY-MAX30102. Its back is consistent
-with onboard regulation/level shifting, but its exact interface remains a hardware check.
-The team plan shows proposed VIN=5V, GND=GND, SDA=A4, SCL=A5 and INT unconnected
-**for a compatible regulated/level-shifted module**. Follow its power/interface checks
-before connecting data wires to a 5V host. Add an appropriate level shifter if required.
-Keep ENABLE_MAX30102=0 until that check is complete. Once verified, set 1 in Config.h.
-
-## Station B - Uno R3
-
-| Part | Connection |
-|---|---|
-| HC-SR04 VCC / GND | 5V / GND |
-| HC-SR04 TRIG / ECHO | D8 / D9 |
-| GO / MODE bare buttons | D2 / D3 to GND when pressed |
-| OLED SDA / SCL | A4 / A5 |
-| OLED GND / VCC | GND / verified module supply |
-
-The photographed OLED header reads GND, VCC, SCL, SDA. Its controller and voltage
-rating are not established by the image. Use ENABLE_OLED=0 for the first Serial-only
-build if electrical compatibility is unconfirmed. Try SH1106 then SSD1306 driver settings;
-0x78/0x7A printed addresses correspond to 7-bit 0x3C/0x3D.
-
-Each unit has its own power rails; do not link 5V and 3.3V. USB powers the Arduinos.
-All devices within one unit share that unit's ground. Keep module pins on separate
-breadboard connection groups and check any split power rails.
+Recalibrate Part B after moving the sensor or target. Hold exercises use proximity to a calibrated reference; chest press uses two points along the hand/target trajectory. Sensor readings do not establish complete body posture.

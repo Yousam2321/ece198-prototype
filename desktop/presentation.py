@@ -2,6 +2,8 @@
 
 def result_label(result, minimum):
     if result.get('missing_target'):return 'Not scored - set target'
+    if result.get('kind')=='counts':
+        return 'Good - rep target met' if result['status']=='Good' else 'Not good yet - rep count'
     if result.get('kind')=='reps':
         if result['status']=='Cannot evaluate':return 'Not scored - no completed attempts'
         if result['status']=='Good':return 'Good - both goals met'
@@ -21,6 +23,8 @@ def result_label(result, minimum):
 
 def short_feedback(result, minimum):
     if result.get('missing_target'):return result['reasons'][0]
+    if result.get('kind')=='counts':
+        return ('Recorded rep target met.' if result['status']=='Good' else f"Needs {result['remaining_reps']:g} more reps.")+ ' Rep-count assessment only; form quality is not measured.'
     if result.get('kind')=='reps':
         if result['status']=='Cannot evaluate':return result['reasons'][0]
         needs=[]
@@ -43,6 +47,10 @@ def short_feedback(result, minimum):
 def progress_summary(rows,index,change,first=False):
     if not change:return 'No earlier comparable scored session yet.'
     exercise=rows[index]['exercise']
+    if change.get('kind')=='counts':
+        prefix='first_' if first else ''
+        return (f"Since {'first' if first else 'previous'} session of this exercise: reps {change[prefix+'rep_change']:+g}; "
+                f"active time {change[prefix+'active_change']:+.1f}s. More time is not scored as better.")
     if change.get('kind')=='reps':
         prefix='first_' if first else ''
         text=(f"Since {'first' if first else 'previous'} chest-press session: good reps {change[prefix+'good_change']:+g}; "

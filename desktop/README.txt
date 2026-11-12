@@ -1,17 +1,19 @@
 ECE198 Exercise Results - Windows
 
 Close the old app, extract the download and double-click dist/ECE198_Results.exe.
-No Python installation or new Arduino upload is needed. Keep B2.5/B2.6 firmware.
+No Python installation is needed for the executable. Keep B2.5/B2.6 firmware on
+Part B. Upload the new PartA/PartA.ino to Part A for its added EEPROM/history support.
 Existing profiles, history and hold criteria remain in the same local database:
 %LOCALAPPDATA%\ECE198_Results\results.sqlite3
 
 1. Enter a participant label and Open profile.
-2. Open results CSV (hold or chest exports), or Read Arduino. Close Serial Monitor
-   first. Read Arduino reads both archives through one connection. Select only
+2. Open results CSV (Part A, hold or chest exports), or Read Arduino. Close Serial Monitor
+   first. Read Arduino auto-detects A/B, reading both B archives when relevant. Select only
    that participant's records and Keep selected sessions. Duplicate imports skip.
    Older firmware without chest support still supplies its hold records.
 3. Enter targets only for the exercises loaded in this profile. Hold targets use
-   seconds; chest targets use whole good-rep counts. The two percentage fields
+   seconds; chest targets use whole good-rep counts; Part A squats/lateral raises
+   use whole recorded-rep counts. The two percentage fields
    are separate: hold consistency and chest good-rep percentage. Both start at
    an editable 90%; this is a prototype setting, not a clinical recommendation.
 4. Review & confirm shows all criteria before scoring. Confirmed inputs collapse
@@ -19,7 +21,7 @@ Existing profiles, history and hold criteria remain in the same local database:
    or importing more data requires confirmation again.
 5. Select a session. The summary names its exercise and shows the precise reason
    if it needs more time, good reps, consistency, good-rep percentage, or both.
-6. View progression shows the selected exercise's percentage. Clean report (PDF)
+6. View progression shows the selected exercise's percentage (B) or rep count (A). Clean report (PDF)
    includes separate exercise sections, stats, goals, reasons, time/rep graphs,
    and comparisons with previous/first sessions. Changed chest travel is flagged.
 7. Export evaluated CSV includes raw data, derived scores, criteria and feedback.
@@ -43,6 +45,16 @@ pause/dropout/finish are not recorded as attempts. Extra travel is allowed witho
 a maximum-distance penalty. Active duration and travel are shown, not scored.
 Comparisons flag changed calibrated travel; they describe different movement
 conditions rather than a normalized improvement score. No hidden weighted score.
+
+Part A evaluation: the recorded rep count must reach its confirmed goal. A good
+result means that count goal was met, not that full movement form was assessed.
+The original detector does not save failed attempts, so there is no good-rep
+percentage or hold consistency for A. Active time excludes pauses. Mean BPM uses
+accepted beats during active exercise; missing beats display Unavailable. BPM
+and active time do not change the verdict. Graphs compare the same exercise only.
+Part A saves on long START (1 second) and before switching away from a paused,
+started exercise. The latest 20 completed sessions remain in the board's EEPROM.
+Use the updated exporter for ASAVED CSVs; older copies do not know this format.
 
 Session numbers are per exercise, not dates or shared board IDs. Import/export
 and report times are not session times. These measurements do not check both arms,

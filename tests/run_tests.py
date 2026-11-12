@@ -25,3 +25,9 @@ with tempfile.TemporaryDirectory() as d:
     if __import__('os').name=='nt': exe=exe.with_suffix('.exe')
     subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic',str(root/'tests/chest_press_tests.cpp'),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+with tempfile.TemporaryDirectory() as d:
+    exe=Path(d)/'parta_tests'
+    if __import__('os').name=='nt': exe=exe.with_suffix('.exe')
+    subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic','-include',str(root/'tests/parta_stubs/Arduino.h'),'-I',str(root/'tests/parta_stubs'),str(root/'tests/parta_tests.cpp'),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

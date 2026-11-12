@@ -1,4 +1,4 @@
-"""Export Solution B's saved EEPROM summaries to a new CSV file.
+"""Export Part A or Solution B saved EEPROM summaries to a new CSV file.
 Finish the current session first: opening the Uno's port can reset the board.
 Close Arduino Serial Monitor before running this script.
 Example: python tools/export_sessions.py --port COM4 --output saved_sessions.csv
@@ -19,6 +19,25 @@ COLUMNS = ["session_id", "exercise", "active_ms", "in_band_ms",
 REP_COLUMNS=['session_id','exercise','active_ms','active_seconds','good_reps','attempts',
              'short_attempts','good_rep_percent','start_cm','pressed_cm','calibrated_travel_cm',
              'required_travel_cm','return_tolerance_cm','last_travel_cm','history_id','exported_at_utc']
+
+
+PART_A_EXERCISES=('squats','lateral_raises')
+PART_A_COLUMNS=['session_id','exercise','active_ms','active_seconds','reps','bpm_avg','bpm_samples','history_id','exported_at_utc']
+
+
+def parse_a_saved(line):
+    fields=next(csv.reader([line]))
+    if len(fields)!=8 or fields[0]!='ASAVED' or fields[2] not in PART_A_EXERCISES:
+        raise ValueError('Incomplete Part A summary; retry export.')
+    identifier,active,reps,samples,generation=map(int,[fields[1],fields[3],fields[4],fields[6],fields[7]])
+    bpm=float(fields[5]) if fields[5].strip() else None
+    if (identifier<1 or not 0<=active<=4294967295 or not 0<=reps<=32767 or
+            not 0<=samples<=65535 or generation<1 or
+            (samples>0 and (bpm is None or not math.isfinite(bpm) or not 40<=bpm<=180)) or
+            (samples==0 and bpm is not None)):
+        raise ValueError('Invalid Part A summary; retry export.')
+    return dict(session_id=identifier,exercise=fields[2],active_ms=active,active_seconds=f'{active/1000:.3f}',
+                reps=reps,bpm_avg='' if bpm is None else f'{bpm:.1f}',bpm_samples=samples,history_id=generation)
 
 
 def parse_rep_saved(line):
@@ -88,7 +107,7 @@ def parse_saved(line):
     return row
 
 
-def read_history(device, timeout=10, clock=time.monotonic):
+def read_history(device, timeout=10, clock=time.monotonic, metadata=None):
     """Read history only; ordinary live DATA is not a saved summary.
 
     Current firmware prints the complete history synchronously before its next
@@ -99,6 +118,7 @@ def read_history(device, timeout=10, clock=time.monotonic):
     device.flush()
     deadline = clock() + timeout
     started, pending, rows = False, b"", {}
+    part_a=False
     while clock() < deadline:
         pending += device.readline()
         if len(pending) > 2048:
@@ -107,32 +127,31 @@ def read_history(device, timeout=10, clock=time.monotonic):
             continue
         line = pending.decode("utf-8", errors="replace").strip()
         pending = b""
-        if line.startswith("# SAVED,"):
-            started = True
-            rows = {}
-        elif started and line.startswith("SAVED,"):
-            row = parse_saved(line)
+        if line.startswith(("# SAVED,","# ASAVED,")):
+            started = True;rows = {};part_a=line.startswith('# ASAVED,')
+            if metadata is not None:metadata['device']='part_a' if part_a else 'station'
+        elif started and line.startswith('ASAVED,' if part_a else 'SAVED,'):
+            row = parse_a_saved(line) if part_a else parse_saved(line)
             previous = rows.get(row["session_id"])
             if previous is not None and previous != row:
                 raise ValueError("Conflicting session IDs received; retry export.")
             rows[row["session_id"]] = row
-        elif started and (line == "# No saved sessions" or
-                          line == "# END_HISTORY" or
-                          line.startswith("DATA,station,")):
+        elif started and ((part_a and line in ('# END_A_HISTORY','# No saved A sessions')) or
+                          (not part_a and (line in ('# No saved sessions','# END_HISTORY') or line.startswith('DATA,station,')))):
             return [rows[key] for key in sorted(rows)]
-        elif line.startswith("EVENT,") and "pause_before_history" in line:
+        elif line.startswith(("EVENT,","A_EVENT,")) and "pause_before_history" in line:
             raise ValueError("Finish or pause the session before exporting.")
-        elif line.startswith("EVENT,") and "command_not_available" in line:
-            raise ValueError("Upload the Solution B firmware with history support first.")
+        elif line.startswith(("EVENT,","A_EVENT,")) and "command_not_available" in line:
+            raise ValueError("Upload the connected board's firmware with history support first.")
     raise TimeoutError("No complete history received. Check the port and firmware; no CSV was saved.")
 
 
-def write_csv(path, rows, reps=False):
+def write_csv(path, rows, reps=False, part_a=False):
     exported = datetime.datetime.now(datetime.timezone.utc).isoformat()
     path.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation protects existing exports. Excel-friendly UTF-8 BOM.
     with path.open("x", newline="", encoding="utf-8-sig") as out:
-        writer = csv.DictWriter(out, fieldnames=REP_COLUMNS if reps else COLUMNS)
+        writer = csv.DictWriter(out, fieldnames=PART_A_COLUMNS if part_a else REP_COLUMNS if reps else COLUMNS)
         writer.writeheader()
         for row in rows:
             writer.writerow(dict(row, exported_at_utc=exported))
@@ -141,7 +160,9 @@ def write_csv(path, rows, reps=False):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", required=True)
-    parser.add_argument("--reps",action="store_true",help="Export saved chest-press sessions instead of holds.")
+    source=parser.add_mutually_exclusive_group()
+    source.add_argument("--reps",action="store_true",help="Export saved chest-press sessions instead of holds.")
+    source.add_argument("--part-a",action="store_true",help="Require the connected board to be Part A (otherwise auto-detected).")
     parser.add_argument("--output", type=Path,
                         default=Path("saved_sessions_" +
                                      datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv"))
@@ -157,8 +178,10 @@ def main():
         with serial.Serial(args.port, 115200, timeout=0.25) as device:
             time.sleep(2)  # Allow the Uno bootloader/auto-reset to finish.
             device.reset_input_buffer()
-            rows = read_rep_history(device) if args.reps else read_history(device)
-        write_csv(args.output, rows, reps=args.reps)
+            metadata={}
+            rows = read_rep_history(device) if args.reps else read_history(device,metadata=metadata)
+            if args.part_a and metadata.get('device')!='part_a':raise ValueError('This is not the Part A board. Check the selected COM port.')
+        write_csv(args.output, rows, reps=args.reps,part_a=metadata.get('device')=='part_a')
     except (serial.SerialException, OSError, ValueError, TimeoutError) as error:
         parser.exit(1, f"Export failed: {error}\n")
     print(f"Exported {len(rows)} session(s) to {args.output.resolve()}")

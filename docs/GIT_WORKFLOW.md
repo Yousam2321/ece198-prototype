@@ -1,57 +1,35 @@
-# Update and share the ECE198 project
+# Update and share the team project
 
 Repository: https://github.com/Yousam2321/ece198-prototype
 
-## Windows: set up GitHub Desktop once
+## GitHub Desktop
 
-1. Install GitHub Desktop from https://desktop.github.com/.
-2. Open **File > Clone repository > URL**.
-3. Enter `https://github.com/Yousam2321/ece198-prototype.git`.
-4. Choose a new local folder, for example `C:\Users\yousa\Desktop\ece198-prototype`.
-   Keep the older extracted ZIP folder separately; it may contain your CSV exports.
-5. Clone. Open `HoldStation/HoldStation.ino` from this cloned folder in Arduino IDE.
-   B2.2 is the station firmware version for the static completed-results screen.
+1. Install GitHub Desktop and sign in.
+2. File → Clone repository → URL: paste the repository URL above; choose a local folder.
+3. For later updates, close files being edited, then Fetch origin → Pull origin.
+4. Open `PartA/PartA.ino` or `HoldStation/HoldStation.ino` from this cloned folder and Upload to the matching board in Arduino IDE.
 
-## Each future firmware update
-
-1. Finish/save the current physical session. Close Arduino IDE to avoid stale editor content.
-2. In GitHub Desktop, select this repository on **main**.
-3. Click **Fetch origin**, then **Pull origin** when offered.
-4. Reopen the cloned folder's `HoldStation/HoldStation.ino`.
-5. Select Arduino Uno and its USB port, then click **Upload**.
-6. Check the OLED version label. Fetch/Pull updates your computer's files;
-   the USB upload installs the firmware onto the Uno.
-
-If Desktop reports local changes/conflicts, preserve or commit your changes before
-pulling. Do not discard local work just to update. Close Serial Monitor and Python
-serial scripts before uploading. Git updates do not erase CSV exports; test CSVs
-are ignored by this repository. EEPROM summaries survive ordinary USB uploads,
-but finish a running session before updating.
-
-Official instructions:
-- https://docs.github.com/en/desktop/adding-and-cloning-repositories/cloning-and-forking-repositories-from-github-desktop
-- https://docs.github.com/en/desktop/working-with-your-remote-repository-on-github-or-github-enterprise/syncing-your-branch-in-github-desktop
-
-## Terminal alternative (Git installed)
-
-Run once from the parent folder where you want the project:
-```sh
-git clone https://github.com/Yousam2321/ece198-prototype.git
-cd ece198-prototype
-```
-
-For later updates, from the cloned repository:
-```sh
-git pull --ff-only
-```
-
-An ordinary GitHub ZIP download is a snapshot. Clone once to use Fetch/Pull;
-there is no need to download and extract a ZIP for each change.
+Pulling source does not change firmware on a board. The Windows executable is downloaded separately from a successful Build Windows results app run under Actions. Its existing profiles remain in the same local database; source updates do not clear them.
 
 ## Team edits
 
-Make a branch for a task, commit changes, push and open a pull request.
-Coordinate before editing shared `PrototypeCore.h`. Its wearable/station copies
-must stay identical; station-specific hold timing is in `HoldTiming.h`.
-Run `python tests/run_tests.py` for portable tests and compile for the real board.
-Do not commit identifiable participant data or credentials.
+```sh
+git clone https://github.com/Yousam2321/ece198-prototype.git
+cd ece198-prototype
+git switch -c part-a-history-tests
+# Edit, build and test the assigned files.
+git add PartA tests docs
+git commit -m "Check Part A history with the original detector"
+git push -u origin part-a-history-tests
+```
+
+Open a pull request and review the changes/checks before merging. Coordinate when editing shared desktop files.
+
+| Teammate | Suggested focus |
+|---|---|
+| 1 | Original Part A wiring, mounting and rep accuracy |
+| 2 | Part A EEPROM, active timing, CSV and power-cycle tests |
+| 3 | Existing Part B wall sit, plank and chest regressions |
+| 4 | App imports, goals, progression, PDF and profile/data deletion |
+
+Do not commit participant data, exported CSV files, credentials or generated build folders. Old implementation versions are retained in Git history rather than duplicate source directories. No project license has been selected automatically.

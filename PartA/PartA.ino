@@ -3,6 +3,8 @@
 #include <LiquidCrystal.h>
 #include "MAX30105.h"
 #include "heartRate.h"
+#include <EEPROM.h>
+#include "PartASessions.h"
 
 // ================= LCD =================
 
@@ -136,6 +138,82 @@ unsigned long lastLCDUpdate = 0;
 const unsigned long LCD_DELAY = 250;
 
 
+// ================= ADDED: HISTORY AND EXPORT =================
+// Detection thresholds, confirmation samples, pin mapping and button timing
+// below are unchanged from the supplied working sketch.
+PartAArchive<EEPROMClass> sessionArchive(EEPROM);
+uint32_t activeMs[NUM_EXERCISES]={0,0};
+bool sessionTouched[NUM_EXERCISES]={false,false};
+float sessionBpmSum[NUM_EXERCISES]={0,0};
+uint16_t sessionBpmSamples[NUM_EXERCISES]={0,0};
+uint32_t sessionClockAt=0;
+char serialCommand[32];
+uint8_t serialCommandLength=0;
+
+void updateSessionClock(){
+  uint32_t now=millis();
+  if(exerciseRunning && !sessionEnded)activeMs[currentExercise]+=uint32_t(now-sessionClockAt);
+  sessionClockAt=now;
+}
+
+void resetSessionStats(int exercise){
+  activeMs[exercise]=0;sessionTouched[exercise]=false;
+  sessionBpmSum[exercise]=0;sessionBpmSamples[exercise]=0;
+}
+
+void recordSessionBeat(float value){
+  if(exerciseRunning && !sessionEnded && sessionBpmSamples[currentExercise]<65535){
+    sessionBpmSum[currentExercise]+=value;++sessionBpmSamples[currentExercise];
+  }
+}
+
+void printPartASaved(const PartASavedSession& r){
+  Serial.print(F("ASAVED,"));Serial.print(r.id);Serial.print(',');
+  Serial.print(r.exercise==0?F("squats"):F("lateral_raises"));Serial.print(',');
+  Serial.print(r.activeMs);Serial.print(',');Serial.print(r.reps);Serial.print(',');
+  if(r.bpmSamples)Serial.print(r.bpmTenths/10.0f,1);
+  Serial.print(',');Serial.print(r.bpmSamples);Serial.print(',');Serial.println(r.historyId);
+}
+
+bool saveCurrentSession(){
+  if(!sessionTouched[currentExercise])return true; // Never save an unused mode.
+  PartASavedSession r={0,activeMs[currentExercise],0,uint16_t(exerciseReps[currentExercise]),
+    sessionBpmSamples[currentExercise]?uint16_t(sessionBpmSum[currentExercise]/sessionBpmSamples[currentExercise]*10+.5f):uint16_t(0),
+    sessionBpmSamples[currentExercise],uint8_t(currentExercise)};
+  if(!sessionArchive.append(r)){Serial.println(F("A_EVENT,part_a,save_failed_counts_kept"));return false;}
+  sessionTouched[currentExercise]=false;printPartASaved(r);
+  return true;
+}
+
+void handleHistoryCommand(const char* command){
+  if(!strcmp(command,"version")){Serial.println(F("# DEVICE,part_a,A1.0"));return;}
+  if(!strcmp(command,"history")){
+    if(exerciseRunning){Serial.println(F("A_EVENT,part_a,pause_before_history"));return;}
+    Serial.println(F("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id"));
+    uint32_t latest=sessionArchive.latestId();
+    if(!latest){Serial.println(F("# No saved A sessions"));return;}
+    uint32_t first=latest>20?latest-19:1;PartASavedSession r;
+    for(uint32_t id=first;;++id){if(sessionArchive.readId(id,r))printPartASaved(r);if(id==latest)break;}
+    Serial.println(F("# END_A_HISTORY"));return;
+  }
+  if(!strcmp(command,"erase CONFIRM") && !exerciseRunning){
+    Serial.println(sessionArchive.clear()?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));return;
+  }
+  Serial.println(F("A_EVENT,part_a,command_not_available"));
+}
+
+void readHistoryCommands(){
+  while(Serial.available()){
+    char ch=Serial.read();if(ch=='\r')continue;
+    if(ch=='\n'){
+      serialCommand[serialCommandLength]='\0';
+      if(serialCommandLength)handleHistoryCommand(serialCommand);
+      serialCommandLength=0;
+    }else if(serialCommandLength<sizeof(serialCommand)-1)serialCommand[serialCommandLength++]=ch;
+    else serialCommandLength=0;
+  }
+}
+
 // ================= RESET SQUAT DETECTION =================
 
 void resetSquatDetection() {
@@ -162,7 +240,9 @@ void resetLatRaiseDetection() {
 
 void endSession() {
 
+  updateSessionClock();
   exerciseRunning = false;
+  if(!saveCurrentSession())return; // Keep counters available if saving fails.
   sessionEnded = true;
 
   // Reset ALL exercise rep counts
@@ -170,6 +250,7 @@ void endSession() {
   for (int i = 0; i < NUM_EXERCISES; i++) {
 
     exerciseReps[i] = 0;
+    resetSessionStats(i);
   }
 
   lastSquatRepTime = 0;
@@ -427,6 +508,8 @@ void setup() {
 
   lcd.clear();
 
+  sessionClockAt=millis();
+  Serial.println(F("# DEVICE,part_a,A1.0"));
   Serial.println("System ready!");
 }
 
@@ -480,7 +563,9 @@ void handleStartButton() {
           if (sessionEnded) {
 
             sessionEnded = false;
+            updateSessionClock();
             exerciseRunning = true;
+            sessionTouched[currentExercise]=true;
 
             lastSquatRepTime = 0;
             lastLatRaiseRepTime = 0;
@@ -496,7 +581,9 @@ void handleStartButton() {
 
           else {
 
+            updateSessionClock();
             exerciseRunning = !exerciseRunning;
+            if(exerciseRunning)sessionTouched[currentExercise]=true;
 
             lastSquatRepTime = 0;
             lastLatRaiseRepTime = 0;
@@ -574,7 +661,10 @@ void handleExerciseButton() {
 
         if (!exerciseRunning) {
 
+          updateSessionClock();
+          if(!saveCurrentSession())return;
           int previousExercise = currentExercise;
+          resetSessionStats(previousExercise);
 
 
           // Reset exercise being switched FROM
@@ -702,6 +792,7 @@ void updatePulseSensor() {
       if (newBPM >= 40 && newBPM <= 180) {
 
         bpm = newBPM;
+        recordSessionBeat(newBPM);
 
         rates[rateSpot] = (byte)bpm;
 
@@ -817,6 +908,8 @@ void updateLCD() {
 
 void loop() {
 
+  updateSessionClock();
+  readHistoryCommands();
   handleStartButton();
 
   handleExerciseButton();
