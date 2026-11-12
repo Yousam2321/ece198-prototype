@@ -22,3 +22,9 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic','-DENABLE_OLED=1','-I',str(root/'tests/stubs'),str(root/'tests/station_tests.cpp'),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
 print('PASS: shared header copies are identical.')
+
+with tempfile.TemporaryDirectory() as d:
+    exe=Path(d)/'chest_press_tests'
+    if __import__('os').name=='nt': exe=exe.with_suffix('.exe')
+    subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic',str(root/'tests/chest_press_tests.cpp'),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

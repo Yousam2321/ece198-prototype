@@ -43,6 +43,12 @@ public:
   uint32_t historyId(){
     uint32_t a=generationAt(900),b=generationAt(908);return a>b?a:b;
   }
+  // Chest-press saves share the generation ID, but have a separate record area.
+  uint32_t ensureHistoryId(){
+    uint32_t value=historyId();
+    if(!value){if(!writeGeneration(1))return 0;value=1;}
+    return value;
+  }
   bool readSlot(uint8_t slot,SavedSession& r){
     if(slot>=CAPACITY || memory.length()<916)return false;
     uint8_t p[RECORD_BYTES];

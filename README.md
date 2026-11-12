@@ -247,3 +247,17 @@ and progression. **Export CSV** remains available. **Manage participants** searc
 labels and deletes an entire local profile (criteria and attempts) after confirmation;
 it does not alter exported files or Arduino records. This update needs no Arduino
 upload. See `desktop/README.txt` for the app instructions.
+
+
+### B2.5 chest press (same Solution B wiring)
+
+MODE now cycles wall sit, plank and chest press. Chest press uses two stable
+reference positions: hold MODE to capture the start, then repeat at full press.
+Good reps reach 80% of that calibrated travel and return within 20% of the start.
+GO retains its start/pause/resume/long-finish controls. The OLED displays good and
+completed-attempt counts. Saved chest sessions occupy a separate ten-record EEPROM
+archive, preserving all twenty hold slots. The existing app continues to import
+wall-sit/plank only; chest-press app integration and the blinking LED are deferred.
+
+See [calibration, controls and physical tests](docs/CHEST_PRESS.md). This update
+requires uploading `HoldStation/HoldStation.ino`; it does not require a new PC app.

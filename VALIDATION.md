@@ -130,3 +130,22 @@ The build used installed dependencies despite a failed network index refresh.
   selected exercise/attempt, specific failure reasons, PDF creation, participant
   manager, complete deletion of synthetic profiles and existing progression view.
 - Arduino firmware and hold-evaluation mathematics are unchanged.
+
+
+## B2.5 chest-press firmware
+
+- Full station-loop regressions for wall sit/plank, buttons, hold timing, DONE,
+  power-cycle persistence and erase confirmation still pass, with OLED on/off.
+- Chest-press pulse simulations cover two-point calibration, too-small travel,
+  starting in the extended pose, short/full cycles, endpoint holds, pauses,
+  missing echoes, partial-rep cancellation, finish/restart, mode cycling, fixed
+  DONE display, independent saving and compatibility of the existing hold protocol.
+- Focused counter tests cover exact 80%/20% boundaries, jitter, one-sample spikes,
+  missing data, pause, invalid values, both travel directions and count saturation.
+- Separate rep archive tests cover its ten-slot ring, every interrupted-write
+  position, reopening after simulated reboot and preservation of hold records and
+  generation bytes. The ALL-history menu clears both archives.
+- Existing 22 Python parser/evaluator/report/profile tests passed unchanged.
+- Uno R3 build checks cover SH1106, SSD1306 and Serial-only configurations.
+- Physical testing with the real sensor and hand trajectory remains required.
+- No app changes or new LED behaviour in this update.
