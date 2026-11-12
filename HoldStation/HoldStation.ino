@@ -10,6 +10,9 @@
 #include "PrototypeCore.h"
 #include "Config.h"
 #include "ExerciseProfiles.h"
+#include <EEPROM.h>
+#include "SavedSessions.h"
+#include "HoldTiming.h"
 #if ENABLE_OLED
 #include <Wire.h>
 #include <U8x8lib.h>
@@ -24,7 +27,8 @@ const uint8_t GO_PIN=2, MODE_PIN=3, TRIG_PIN=8, ECHO_PIN=9;
 // Display address and driver settings are in Config.h.
 Session session;
 Button goButton, modeButton;
-RangeTimer rangeTimer;
+HoldTiming rangeTimer;
+SessionArchive<EEPROMClass> archive(EEPROM);
 uint8_t profile=0; // 0=wall sit, 1=plank
 bool calibrated=false, calibrating=false, distanceValid=false, inside=false;
 float targetCm=0, toleranceCm=HOLD_PROFILES[0].toleranceCm, distanceCm=0;
@@ -34,7 +38,7 @@ uint32_t lastRange=0, lastLog=0, lastDisplay=0, calAt=0;
 char commandLine[48];
 uint8_t commandLength=0;
 const char* name() { return HOLD_PROFILES[profile].name; }
-void emit(const char* type,const char* note) {
+void emit(const char* type,const __FlashStringHelper* note) {
   Serial.print(type);Serial.print(F(",station,"));Serial.print(millis());
   Serial.print(',');Serial.print(name());Serial.print(',');Serial.print(stateName(session.state));
   Serial.print(',');Serial.print(session.active);Serial.print(',');
@@ -44,26 +48,29 @@ void emit(const char* type,const char* note) {
   Serial.print(',');Serial.print(distanceValid?1:0);
   Serial.print(',');Serial.print(inside?1:0);
   Serial.print(',');Serial.print(rangeTimer.total);
+  Serial.print(',');Serial.print(rangeTimer.gapMs);
   Serial.print(',');Serial.println(note);
 }
 void resetSession() {
   session.reset(millis());rangeTimer.clear();
   historyCount=0;distanceValid=false;inside=false;calibrating=false;
-  emit("EVENT","reset_calibration_retained");
+  emit("EVENT",F("reset_calibration_retained"));
 }
 // Changing exercise also clears calibration and loads that exercise's tolerance.
 void chooseMode(uint8_t next) {
+  if(session.state==DONE)resetSession();
   if(session.state!=IDLE || calibrating || next>1 || next==profile)return;
   profile=next;calibrated=false;toleranceCm=HOLD_PROFILES[profile].toleranceCm;rangeTimer.clear();
   historyCount=0;distanceValid=false;inside=false;
-  emit("EVENT","mode_changed_recalibrate");
+  emit("EVENT",F("mode_changed_recalibrate"));
 }
 // Average a stable reference distance for 2 seconds. Do this after mounting.
 void startCalibration() {
-  if(session.state!=IDLE){emit("EVENT","calibrate_requires_idle");return;}
+  if(session.state==DONE)resetSession();
+  if(session.state!=IDLE){emit("EVENT",F("calibrate_requires_idle"));return;}
   calibrating=true;calibrated=false;calSum=0;calSquareSum=0;calCount=0;calAt=millis();
   historyCount=0;distanceValid=false;inside=false;
-  emit("EVENT","calibrate_2s_hold_reference_position");
+  emit("EVENT",F("calibrate_2s_hold_reference_position"));
 }
 // Five-sample median rejects isolated spikes; it adds a short response delay.
 float medianHistory() {
@@ -103,34 +110,63 @@ void measureDistance(uint32_t now) {
     calibrated=calCount>=12 && mean>=12 && mean<=150 && variance<=4;
     if(calibrated)targetCm=mean;
     rangeTimer.clear();
-    emit("EVENT",calibrated?"reference_distance_saved":"calibration_failed_reposition");
+    emit("EVENT",calibrated?F("reference_distance_saved"):F("calibration_failed_reposition"));
   }
   rangeTimer.update(measuredAt,session.state==RUNNING,distanceValid,inside);
 }
 void go() {
-  if(calibrating){emit("EVENT","wait_for_calibration");return;}
-  if(session.state==IDLE && !calibrated){emit("EVENT","calibrate_first");return;}
-  if(session.state==DONE){resetSession();return;}
+  if(calibrating){emit("EVENT",F("wait_for_calibration"));return;}
+  if(session.state==IDLE && !calibrated){emit("EVENT",F("calibrate_first"));return;}
+  // One short press from DONE clears old timers and starts a fresh countdown.
+  if(session.state==DONE)resetSession();
   session.go(millis());rangeTimer.breakContinuity();
-  emit("EVENT","button_or_go");
+  emit("EVENT",F("button_or_go"));
+}
+// Finish only a session that actually started. Repeated presses cannot save twice.
+void printSaved(const SavedSession& r) {
+  Serial.print(F("SAVED,"));Serial.print(r.id);Serial.print(',');
+  Serial.print(r.exercise?F("plank"):F("wall_sit"));Serial.print(',');
+  Serial.print(r.activeMs);Serial.print(',');Serial.print(r.inBandMs);Serial.print(',');
+  Serial.print(r.referenceMm/10.0f,1);Serial.print(',');
+  Serial.println(r.toleranceMm/10.0f,1);
+}
+void showHistory() {
+  if(session.state==RUNNING || session.state==COUNTDOWN){
+    emit("EVENT",F("pause_before_history"));return;
+  }
+  Serial.println(F("# SAVED,id,exercise,active_ms,in_band_ms,reference_cm,band_cm"));
+  uint32_t latest=archive.latestId();
+  if(!latest){Serial.println(F("# No saved sessions"));return;}
+  uint32_t first=latest>20?latest-19:1;
+  SavedSession r;
+  for(uint32_t id=first;;++id){
+    if(archive.readId(id,r))printSaved(r);
+    if(id==latest)break;
+  }
 }
 void finishSession() {
+  if(session.state!=RUNNING && session.state!=PAUSED)return;
   session.finish(millis());rangeTimer.breakContinuity();
-  emit("SUMMARY","finished_distance_proxy_not_form_grade");
+  SavedSession r={0,session.active,rangeTimer.total,
+    uint16_t(targetCm*10+0.5f),uint16_t(toleranceCm*10+0.5f),profile};
+  bool saved=archive.append(r);
+  emit("SUMMARY",saved?F("saved_to_eeprom"):F("save_failed"));
+  if(saved)printSaved(r);
 }
 // Both wall sit and plank use this controller; only reference placement differs.
 void handleCommand(char* line) {
   if(!strcmp(line,"go"))go();
   else if(!strcmp(line,"cal"))startCalibration();
+  else if(!strcmp(line,"history"))showHistory();
   else if(!strcmp(line,"finish"))finishSession();
   else if(!strcmp(line,"reset") && session.state!=RUNNING)resetSession();
   else if(!strcmp(line,"wall"))chooseMode(0);
   else if(!strcmp(line,"plank"))chooseMode(1);
-  else if(!strncmp(line,"band ",5) && session.state==IDLE){
-    float n=atof(line+5);if(n>=1 && n<=20){toleranceCm=n;emit("EVENT","band_changed_cm");}
+  else if(!strncmp(line,"band ",5) && (session.state==IDLE || session.state==DONE)){
+    float n=atof(line+5);if(n>=1 && n<=20){toleranceCm=n;emit("EVENT",F("band_changed_cm"));}
   }
-  else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM"));
-  else emit("EVENT","command_not_available");
+  else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM history"));
+  else emit("EVENT",F("command_not_available"));
 }
 void readCommands() {
   while(Serial.available()){
@@ -171,7 +207,8 @@ void updateDisplay() {
   if(calibrated){snprintf(text,sizeof(text),"Ref %ucm +/-%u",(unsigned int)(targetCm+0.5f),(unsigned int)toleranceCm);writeDisplayLine(5,text);}
   else writeDisplayLine(5,"HOLD MODE TO CAL");
   writeDisplayLine(6,calibrated?(inside?"WITHIN BAND":"OUTSIDE BAND"):"NEEDS REFERENCE");
-  writeDisplayLine(7,"GO=start/pause");
+  writeDisplayLine(7,session.state==DONE?"GO=new attempt":
+    (session.state==RUNNING?"GO=pause hold=end":"GO=start/resume"));
 #endif
 }
 void setup() {
@@ -184,24 +221,26 @@ void setup() {
   oled.begin();oled.setFont(u8x8_font_chroma48medium8_r);
 #endif
   session.reset(millis());
-  Serial.println(F("type,device,uptime_ms,exercise,state,active_ms,distance_cm,reference_cm,band_cm,echo_valid,inside_band,range_ms,note"));
-  emit("EVENT","boot_type_help_for_commands");
+  Serial.println(F("type,device,uptime_ms,exercise,state,active_ms,distance_cm,reference_cm,band_cm,echo_valid,inside_band,range_ms,sample_gap_ms,note"));
+  emit("EVENT",F("boot_type_help_for_commands"));
 }
 // Keep timing, buttons and sensor processing responsive; do not add long delays.
 void loop() {
   uint32_t now=millis();
   RunState before=session.state;session.tick(now);
-  if(before==COUNTDOWN && session.state==RUNNING){rangeTimer.breakContinuity();emit("EVENT","started");}
+  if(before==COUNTDOWN && session.state==RUNNING){rangeTimer.breakContinuity();emit("EVENT",F("started"));}
   readCommands();
+  now=millis(); // Commands/EEPROM reads may take time; sample buttons with fresh time.
   ButtonEvent a=goButton.update(digitalRead(GO_PIN)==LOW,now);
   ButtonEvent b=modeButton.update(digitalRead(MODE_PIN)==LOW,now);
   if(a==SHORT_PRESS)go();
-  if(a==LONG_PRESS){if(session.state==DONE)resetSession();else finishSession();}
+  // Long GO is ignored in IDLE, COUNTDOWN and DONE: no empty sessions.
+  if(a==LONG_PRESS)finishSession();
   if(b==SHORT_PRESS)chooseMode(1-profile);
   if(b==LONG_PRESS)startCalibration();
   measureDistance(now);
-  if(uint32_t(now-lastRange)>150){distanceValid=false;inside=false;rangeTimer.breakContinuity();}
+  if(uint32_t(millis()-lastRange)>150){distanceValid=false;inside=false;rangeTimer.breakContinuity();}
   digitalWrite(LED_BUILTIN,session.state==RUNNING && inside);
   if(uint32_t(now-lastDisplay)>=250){lastDisplay=now;updateDisplay();}
-  if(uint32_t(now-lastLog)>=1000){lastLog=now;emit("DATA","status");}
+  if(uint32_t(now-lastLog)>=1000){lastLog=now;emit("DATA",F("status"));}
 }

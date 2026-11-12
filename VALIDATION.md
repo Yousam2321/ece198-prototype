@@ -40,3 +40,18 @@ The row cache costs 136 bytes of static RAM; 490 bytes remain for stack/runtime
 allocations. The compiler reports low available memory, so runtime stability
 still needs hardware testing. Distance acquisition and calibration are unchanged.
 The build used installed dependencies despite a failed network index refresh.
+
+## Station persistence, restart and in-band timing update
+
+- Default Uno R3/SH1106 build passed: 18,620 bytes flash; 1,265 bytes static RAM,
+  leaving 783 bytes for stack/runtime data. Event strings moved to flash to reduce RAM.
+- EEPROM archive uses addresses 0..419 for 20 records; version, CRC and a commit
+  marker reject incomplete/corrupt entries. No continuous EEPROM writes occur.
+- Host tests execute the actual station sketch with simulated Arduino/EEPROM APIs:
+  idle/countdown long-press finish rejection, duplicate-save prevention, one-press
+  restart with fresh timers, pause/resume and summary contents.
+- Archive tests cover reboot reads, ring overwrite, corruption and interruption at
+  every write boundary. Timing tests cover delayed samples, outside/invalid input,
+  pause, reset and millis rollover. Existing shared-core tests also passed.
+- Physical OLED/button/range/EEPROM behavior still needs testing on the user's board.
+- The wearable still uses its unchanged shared RangeTimer; station now uses HoldTiming.

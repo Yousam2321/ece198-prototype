@@ -5,5 +5,5 @@
 // Calibrate in the chosen reference position before starting. Sensor movement,
 // different body placement or another exercise requires another calibration.
 // In-band time means near one reference distance, not verified clinical posture.
-// +/-4 cm is an adjustable engineering tolerance, not a medical prescription.
-inline HoldProfile makePlankProfile() { return {"plank",4.0f}; }
+// +/-10 cm is an adjustable engineering tolerance, not a medical prescription.
+inline HoldProfile makePlankProfile() { return {"plank",10.0f}; }

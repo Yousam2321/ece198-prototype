@@ -71,6 +71,28 @@ before setting `ENABLE_MAX30102` to `1`; complete the electrical checks first.
 References: [Arduino library installation](https://support.arduino.cc/hc/en-us/articles/5145457742236-Install-libraries-in-the-Arduino-IDE)
 and [U8g2 source](https://github.com/olikraus/u8g2).
 
+## Station session saving and restart
+
+The station automatically saves a summary when you finish a RUNNING/PAUSED
+session by holding GO >=1.2 seconds and releasing it, or sending `finish`.
+Send `history` in Serial Monitor at 115200 baud with Newline to read saved results.
+The latest 20 summaries survive power cycles in the Uno R3 EEPROM; new saves
+replace the oldest. Running sessions are not recovered after power loss. Each
+summary stores session ID, exercise, active/in-band milliseconds, reference and
+band tolerance. No calendar date is available without a real-time clock.
+
+One short GO from DONE clears session timers and starts another three-second
+countdown, retaining calibration. Long GO while IDLE/COUNTDOWN/DONE is ignored.
+MODE from DONE lets you choose/calibrate another exercise. Both station exercises
+now default to +/-10 cm. For accurate results, recalibrate after moving the sensor.
+
+In-band timing uses consecutive valid samples, with each credited interval capped
+at 150 ms; it no longer restarts a 300 ms settling period after delayed samples.
+The first qualifying sample earns no time. Invalid/outside readings or pauses stop
+credit immediately. See [the exercise guide](docs/EXERCISES.md) for details.
+Install the complete updated HoldStation folder, including SavedSessions.h and
+HoldTiming.h. No additional Arduino library is needed beyond U8g2; EEPROM is built in.
+
 ## Save data
 
 Serial Monitor does not save a file automatically. Close it before using the same port:

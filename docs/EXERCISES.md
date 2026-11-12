@@ -28,8 +28,31 @@ before `go`. After DONE, use `reset` to return to IDLE before changing exercise.
 
 Wait for the two-second `cal` procedure to finish before `go`.
 Switching station mode invalidates the reference. Each profile supplies its default
-band tolerance. The `band 4` command adjusts the current idle session to +/-4cm.
+band tolerance. Both defaults are now +/-10cm. The `band 10` command also sets the current
+IDLE/DONE session to +/-10cm.
 This reference distance does not prove full-body alignment or squat depth.
+
+The station uses consecutive valid in-band samples to count hold time. The first
+sample starts a chain; each following qualifying sample adds elapsed time, capped
+at 150 ms per sample. There is no settling delay. Invalid/outside readings and pauses
+break the chain. A stalled loop never earns its full stalled duration.
+The CSV `sample_gap_ms` column helps diagnose slow measurements/display updates.
+
+### Station results and restart
+
+- Hold GO >=1.2s and release while RUNNING/PAUSED to finish and save once.
+- Long GO in IDLE/COUNTDOWN/DONE does nothing; it cannot create an empty summary.
+- DONE keeps final totals visible. One short GO clears totals and starts a new countdown.
+- Calibration and current tolerance are retained for another attempt; recalibrate if
+  placement changes. MODE can select/calibrate the next exercise from DONE.
+- `history` in Serial Monitor (115200 baud, Newline) prints the latest 20 completed
+  session summaries, oldest first. It works while IDLE, PAUSED or DONE.
+- EEPROM addresses 0..419 hold those summaries across power cycles. The 21st save
+  overwrites the oldest. Each contains ID, exercise, active/in-band milliseconds,
+  reference and tolerance. No calendar date is stored. A power cut during a save
+  can lose that entry; incomplete/corrupt entries are rejected with a commit marker
+  and CRC. Only completed sessions are saved; an unplugged running session is lost.
+- Export the printed SAVED rows to your computer for longer-term storage.
 
 ## Shared controls
 
