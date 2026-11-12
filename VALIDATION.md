@@ -70,3 +70,16 @@ The build used installed dependencies despite a failed network index refresh.
   leaving 761 bytes for stack/runtime. Existing portable tests pass.
 - No physical board is attached here; actual wiring, input signals and timings
   still need the bench check documented in README.
+
+## B2.2 completed OLED screen
+
+- DONE renders final times/reference and EEPROM save result once. It no longer
+  renders live range or inside/outside changes; a new session clears the latch.
+- The compact Band label retains tenths without overflowing the 16-character row.
+- OLED-enabled host integration tests verify that sensor changes after DONE cause
+  zero additional OLED writes and that restarting updates the display again.
+  The save-failure display state is checked separately.
+- Shared-core, serial-only and OLED-stub station tests passed. Default Uno
+  R3/SH1106 firmware compiled: 18,912 bytes flash; 1,327 bytes static RAM;
+  721 bytes left for stack/runtime. Physical flicker still needs a board check.
+- GitHub Desktop clone/fetch/pull instructions added to avoid repeated ZIP downloads.
