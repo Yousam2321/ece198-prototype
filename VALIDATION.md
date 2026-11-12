@@ -55,3 +55,18 @@ The build used installed dependencies despite a failed network index refresh.
   pause, reset and millis rollover. Existing shared-core tests also passed.
 - Physical OLED/button/range/EEPROM behavior still needs testing on the user's board.
 - The wearable still uses its unchanged shared RangeTimer; station now uses HoldTiming.
+
+## B2.1 version and end-to-end regression checks
+
+- OLED title and Serial version command identify B2.1, preventing ambiguity
+  between a downloaded folder and the sketch actually running on the Uno.
+- In-band display uses tenths of a second; GO release events identify short/long.
+- Fresh calibration is checked after a DONE reset before starting again.
+- The host integration test now drives the actual firmware loop with simulated
+  HC-SR04 echoes and timed button presses. It calibrates, counts over five seconds
+  in band, pauses/resumes, saves, and repeats a complete second session.
+  It verifies long idle/done presses cannot create empty or duplicate summaries.
+- Uno R3 / default SH1106 build: 18,780 bytes flash; 1,287 bytes static RAM,
+  leaving 761 bytes for stack/runtime. Existing portable tests pass.
+- No physical board is attached here; actual wiring, input signals and timings
+  still need the bench check documented in README.
