@@ -6,24 +6,31 @@ Use this repository as the shared source for the four-person build.
 **Prototype status:** code can be compiled and logic-tested without hardware.
 Sensor readings, repetition accuracy and placement must still be tested on the real build.
 
-## Verify the station version: B2.1
+## Easier updates (Windows)
 
-The OLED title must show **WALL SIT B2.1** or **PLANK B2.1**.
-Serial command `version` prints `# ECE198_B_2.1`.
+Clone this repository once using **GitHub Desktop**, then use **Fetch origin /
+Pull origin** for later updates. Open the sketch from the cloned folder and click
+Upload in Arduino IDE. See [the step-by-step Git workflow](docs/GIT_WORKFLOW.md).
+Fetching code alone does not change the program running on the Uno.
+
+## Verify the station version: B2.2
+
+The OLED title must show **WALL SIT B2.2** or **PLANK B2.2**.
+Serial command `version` prints `# ECE198_B_2.2`.
 Download/extract the current repository and open the new
 `HoldStation/HoldStation.ino`, keeping its entire folder intact.
 Uploading a previously opened sketch from an older folder does not update it.
 
 For a bench check, keep a book still about 50 cm from the ultrasonic sensor.
 Hold/release MODE to calibrate, then briefly tap/release GO.
-After COUNTDOWN, RUNNING should show In band increasing in tenths of a second.
+After COUNTDOWN, RUNNING should show Band (in-band time) increasing in tenths of a second.
 Hold GO >=1.2 seconds and release to save and show DONE.
 One short GO from DONE resets both timers and starts a fresh countdown.
 A long GO in IDLE/COUNTDOWN/DONE cannot create/finish a session.
-The results remain visible at DONE until an explicit new attempt/mode/calibration.
+At DONE, the OLED writes a fixed summary once: final times, save success/failure,\nreference, and next actions. Live distance and inside/outside changes no longer\nrewrite the completed screen. It stays visible until a new attempt/mode/calibration.
 Serial button events `go_short` and `go_long` identify what the hardware detected.
 
-If B2.1 shows RUNNING with WITHIN BAND but its counter stays at zero,
+If B2.2 shows RUNNING with WITHIN BAND but its counter stays at zero,
 capture several DATA rows plus button events; the sample_gap_ms field helps
 distinguish intermittent samples from a session-control problem.
 
