@@ -15,7 +15,7 @@
 #include "HoldTiming.h"
 #include "exercises/ChestPress.h"
 #include "RepSessions.h"
-#define STATION_VERSION "2.5"
+#define STATION_VERSION "2.6"
 #if ENABLE_OLED
 #include <Wire.h>
 #include <U8x8lib.h>
@@ -39,6 +39,7 @@ float pressedCm=0;
 uint8_t profile=0; // 0=wall sit, 1=plank, 2=chest press
 bool calibrated=false, calibrating=false, distanceValid=false, inside=false;
 bool finalResultShown=false, lastSaveSucceeded=false;
+bool cancelPrompt=false,discardResult=false;
 bool erasePrompt=false, eraseWaitRelease=false, eraseChordActive=false, eraseCanOpen=false;
 uint8_t eraseResult=0; // 0=none, 1=cleared, 2=erase failed
 uint32_t eraseChordAt=0;
@@ -79,6 +80,7 @@ void emit(const char* type,const __FlashStringHelper* note) {
   Serial.print(',');Serial.println(note);
 }
 void resetSession() {
+  cancelPrompt=false;discardResult=false;
   finalResultShown=false;lastSaveSucceeded=false;eraseResult=0;
   session.reset(millis());rangeTimer.clear();reps.clear();
   historyCount=0;distanceValid=false;inside=false;calibrating=false;
@@ -88,7 +90,7 @@ void resetSession() {
 void chooseMode(uint8_t next) {
   if(session.state==DONE)resetSession();
   if(session.state!=IDLE || calibrating || next>2 || next==profile)return;
-  eraseResult=0;
+  discardResult=false;eraseResult=0;
   profile=next;calibrated=false;chestAwaitEnd=false;pressedCm=0;reps.clear();
   toleranceCm=profile==2?0:HOLD_PROFILES[profile].toleranceCm;rangeTimer.clear();
   historyCount=0;distanceValid=false;inside=false;
@@ -98,7 +100,7 @@ void chooseMode(uint8_t next) {
 void startCalibration() {
   if(session.state==DONE)resetSession();
   if(session.state!=IDLE){emit("EVENT",F("calibrate_requires_idle"));return;}
-  eraseResult=0;
+  discardResult=false;eraseResult=0;
   if(profile==2 && calibrated)chestAwaitEnd=false; // Recalibration starts from the start pose.
   calibrating=true;calibrated=false;calSum=0;calSquareSum=0;calCount=0;calAt=millis();
   historyCount=0;distanceValid=false;inside=false;
@@ -167,11 +169,12 @@ void measureDistance(uint32_t now) {
   rangeTimer.update(measuredAt,session.state==RUNNING,distanceValid,inside);
 }
 void go() {
+  if(cancelPrompt)return;
   if(calibrating){emit("EVENT",F("wait_for_calibration"));return;}
   // A completed session never toggles back to DONE on the next short press.
   if(session.state==DONE)resetSession();
   if(session.state==IDLE && !calibrated){emit("EVENT",F("calibrate_first"));return;}
-  eraseResult=0;
+  discardResult=false;eraseResult=0;
   session.go(millis());rangeTimer.breakContinuity();reps.breakContinuity();
   emit("EVENT",F("button_or_go"));
 }
@@ -218,6 +221,7 @@ void showRepHistory(){
   Serial.println(F("# END_REP_HISTORY"));
 }
 void finishSession() {
+  if(cancelPrompt)return;
   if(session.state!=RUNNING && session.state!=PAUSED)return;
   session.finish(millis());rangeTimer.breakContinuity();reps.breakContinuity();
   if(profile==2){
@@ -235,6 +239,26 @@ void finishSession() {
   lastSaveSucceeded=saved;finalResultShown=false;
   emit("SUMMARY",saved?F("saved_to_eeprom"):F("save_failed"));
   if(saved)printSaved(r);
+}
+// A paused session can be discarded without writing or erasing EEPROM.
+// Button events arrive on release; the opening MODE release is consumed here.
+bool handleCancelButtons(uint32_t now,ButtonEvent a,ButtonEvent b){
+  if(cancelPrompt){
+    if(a==SHORT_PRESS && b==NO_PRESS && !modeButton.stable){
+      resetSession();discardResult=true;
+      emit("EVENT",F("session_cancelled_not_saved"));
+    }else if(b==SHORT_PRESS && a==NO_PRESS && !goButton.stable){
+      cancelPrompt=false;emit("EVENT",F("cancel_back_to_paused"));
+    }
+    return true;
+  }
+  if(session.state==PAUSED && b==LONG_PRESS && a==NO_PRESS && !goButton.stable){
+    if(uint32_t(now-modeButton.downAt)>=2000){
+      cancelPrompt=true;emit("EVENT",F("cancel_session_prompt"));
+    }else emit("EVENT",F("hold_mode_2s_to_cancel"));
+    return true;
+  }
+  return false;
 }
 // Both buttons open a confirmation menu, only when no session is active.
 void eraseHistory() {
@@ -276,6 +300,7 @@ bool handleEraseButtons(uint32_t now,ButtonEvent a,ButtonEvent b) {
 }
 // Both wall sit and plank use this controller; only reference placement differs.
 void handleCommand(char* line) {
+  if(cancelPrompt){emit("EVENT",F("answer_cancel_with_buttons"));return;}
   if(!strcmp(line,"go"))go();
   else if(!strcmp(line,"cal"))startCalibration();
   else if(!strcmp(line,"history"))showHistory();
@@ -326,7 +351,7 @@ void writeDisplayFlash(uint8_t row,const __FlashStringHelper* message){
 }
 void displayChest(){
   char text[17];
-  writeDisplayFlash(0,F("CHEST PRESS B" STATION_VERSION));
+  writeDisplayFlash(0,F("CHEST B" STATION_VERSION));
   if(calibrating)writeDisplayFlash(1,chestAwaitEnd?F("CAL PRESS 2s"):F("CAL START 2s"));
   else writeDisplayLine(1,stateName(session.state));
   snprintf(text,sizeof(text),"Good %u/%u",unsigned(reps.good),unsigned(reps.attempts));writeDisplayLine(2,text);
@@ -340,7 +365,8 @@ void displayChest(){
   if(calibrated){
     snprintf(text,sizeof(text),"Goal %ucm (80%%)",unsigned(chestTravel()*.8f+.5f));writeDisplayLine(5,text);
   }else writeDisplayFlash(5,chestAwaitEnd?F("Hold MODE at END"):F("Hold MODE: START"));
-  if(session.state==DONE)writeDisplayFlash(6,F("MODE=exercise"));
+  if(session.state==PAUSED)writeDisplayFlash(6,F("MODE 2s=cancel"));
+  else if(session.state==DONE)writeDisplayFlash(6,F("MODE=exercise"));
   else if(calibrating)writeDisplayFlash(6,F("HOLD HAND STILL"));
   else if(!calibrated)writeDisplayFlash(6,chestAwaitEnd?F("EXTEND THEN CAL"):F("START THEN CAL"));
   else if(session.state==RUNNING){
@@ -357,6 +383,15 @@ void displayChest(){
 // Text-only U8x8 avoids a large framebuffer on the memory-limited Uno R3.
 void updateDisplay() {
 #if ENABLE_OLED
+  if(cancelPrompt || discardResult){
+    writeDisplayFlash(0,cancelPrompt?F("CANCEL SESSION?"):F("CANCELLED"));
+    writeDisplayFlash(1,cancelPrompt?F("GO=yes MODE=no"):F("NOT SAVED"));
+    writeDisplayFlash(2,cancelPrompt?F("Current attempt"):F("GO=new session"));
+    writeDisplayFlash(3,cancelPrompt?F("History kept"):F("MODE=exercise"));
+    writeDisplayFlash(4,F("Calibration kept"));
+    writeDisplayFlash(5,F(""));writeDisplayFlash(6,F(""));
+    writeDisplayFlash(7,F("B" STATION_VERSION));return;
+  }
   if(erasePrompt){
     writeDisplayFlash(0,F("ERASE HISTORY?"));
     writeDisplayFlash(1,F("Delete ALL saves"));
@@ -389,8 +424,8 @@ void updateDisplay() {
   else writeDisplayFlash(4,F("NO VALID ECHO"));
   if(calibrated){snprintf(text,sizeof(text),"Ref %ucm +/-%u",(unsigned int)(targetCm+0.5f),(unsigned int)toleranceCm);writeDisplayLine(5,text);}
   else writeDisplayFlash(5,F("HOLD MODE TO CAL"));
-  writeDisplayFlash(6,session.state==DONE?F("MODE=exercise"):
-    (calibrated?(inside?F("WITHIN BAND"):F("OUTSIDE BAND")):F("NEEDS REFERENCE")));
+  writeDisplayFlash(6,session.state==PAUSED?F("MODE 2s=cancel"):(session.state==DONE?F("MODE=exercise"):
+    (calibrated?(inside?F("WITHIN BAND"):F("OUTSIDE BAND")):F("NEEDS REFERENCE"))));
   writeDisplayFlash(7,session.state==DONE?F("GO=new attempt"):
     (session.state==RUNNING?F("GO=pause hold=end"):F("GO=start/resume")));
   if(session.state==DONE)finalResultShown=true;
@@ -419,7 +454,7 @@ void loop() {
   now=millis(); // Commands/EEPROM reads may take time; sample buttons with fresh time.
   ButtonEvent a=goButton.update(digitalRead(GO_PIN)==LOW,now);
   ButtonEvent b=modeButton.update(digitalRead(MODE_PIN)==LOW,now);
-  if(!handleEraseButtons(now,a,b)){
+  if(!handleCancelButtons(now,a,b) && !handleEraseButtons(now,a,b)){
   if(a==SHORT_PRESS){emit("EVENT",F("go_short"));go();}
   // Long GO is ignored in IDLE, COUNTDOWN and DONE: no empty sessions.
   if(a==LONG_PRESS){emit("EVENT",F("go_long"));finishSession();}

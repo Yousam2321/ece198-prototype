@@ -1,4 +1,4 @@
-# Chest press - Solution B B2.5
+# Chest press - Solution B B2.6
 
 Same Uno R3, HC-SR04, OLED and two buttons. No new wiring or parts.
 The desktop app and LED behaviour have not been extended in this update.
@@ -12,7 +12,7 @@ The desktop app and LED behaviour have not been extended in this update.
    The existing U8g2 library is still required. The default OLED driver is SH1106;
    keep `OLED_SH1106=0` in `Config.h` if your working display needs SSD1306.
 4. MODE now cycles **Wall sit -> Plank -> Chest press -> Wall sit**.
-   The screen shows version B2.5 for all three exercises.
+   The screen shows version B2.6 for all three exercises.
 
 ## Calibrate using only buttons
 
@@ -82,7 +82,7 @@ Serial Monitor at **115200**, New Line:
 - `chest` selects chest press; `cal`, `go`, `finish` match the buttons.
 - `rep_history` prints the saved chest-press summaries (without erasing anything).
 - `history` continues to print **only hold summaries**, for the existing app.
-- `version` prints `# ECE198_B_2.5`.
+- `version` prints `# ECE198_B_2.6`.
 
 Chest live rows have a separate prefix and column meaning:
 
@@ -115,3 +115,30 @@ Automated validation runs the actual firmware loop against simulated echo pulses
 button input and EEPROM, plus focused threshold/noise/dropout tests. Uno builds
 cover SH1106, SSD1306 and Serial-only configurations. Physical validation must
 still be done on the assembled prototype.
+
+## Cancel without saving (B2.6, all exercises)
+
+1. Tap GO to pause.
+2. Hold MODE for at least **2 seconds**, then release.
+3. At **CANCEL SESSION?**, tap GO to discard or MODE to return to PAUSED.
+
+Discard resets current timers and counts, keeps calibration, and never writes to
+or clears saved EEPROM history. CANCELLED / NOT SAVED confirms the action.
+Short GO then starts a fresh countdown. A long GO still finishes and saves during
+a normal running/paused session, but is ignored inside the cancel confirmation.
+The chest heading is shortened to CHEST B2.6 to leave more room on the first row.
+
+## Export chest sessions to CSV in PowerShell
+
+Close Serial Monitor and the app. From the **project root** (the folder containing
+`tools`, not inside `HoldStation`), run:
+
+```powershell
+python tools/export_sessions.py --port COM10 --reps --output ".\saved_sessions\chest_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
+```
+
+The CSV includes good/attempt counts, short attempts, good-rep percentage, active
+time, reference positions, travel thresholds and the last completed travel.
+Zero attempts gives a blank percentage. Export does not erase board history.
+Omit `--reps` to export wall-sit/plank records using the existing format. These raw
+chest CSVs are for Excel; chest-press scoring in the app is still deferred.

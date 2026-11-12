@@ -245,7 +245,7 @@ int main(){
   Serial.output.clear();showRepHistory();
   assert(Serial.output.find("REPSAVED,1,chest_press,")!=std::string::npos);
 #if ENABLE_OLED
-  updateDisplay();assert(strstr(fakeScreen[0],"CHEST PRESS B2.5"));
+  updateDisplay();assert(strstr(fakeScreen[0],"CHEST B2.6"));
   assert(strstr(fakeScreen[2],"Good 3/4"));assert(strstr(fakeScreen[4],"SAVED TO EEPROM"));
   unsigned int fixedChestWrites=fakeOledWrites;
   atDistance(100);updateDisplay();assert(fakeOledWrites==fixedChestWrites);
@@ -282,5 +282,37 @@ int main(){
   }
   assert(repLog.clear() && repLog.latestId()==0);
   assert(untouchedHolds.readId(1,untouched) && untouched.tailKnown && untouchedHolds.historyId()==1);
+  // Cancel confirmation across all modes: no EEPROM changes, no lost counts
+  // on declining, no accidental save from long GO in the confirmation menu.
+  auto holdMode=[](uint32_t ms){fakePins[MODE_PIN]=LOW;advance(ms);fakePins[MODE_PIN]=HIGH;advance(60);};
+  for(uint8_t exercise=0;exercise<3;++exercise){
+    resetSession();profile=exercise;calibrated=true;targetCm=80;pressedCm=50;
+    fakePulse=uint32_t(80*2/.0343f);go();advance(3100);advance(500);
+    pressGo(200);assert(session.state==PAUSED);
+    uint32_t heldActive=session.active,heldBand=rangeTimer.total;
+    reps.good=2;reps.attempts=3;
+    uint8_t savedBytes[1024];memcpy(savedBytes,EEPROM.bytes,1024);
+    holdMode(1500);assert(!cancelPrompt && session.state==PAUSED);
+    holdMode(2200);assert(cancelPrompt && session.state==PAUSED);
+#if ENABLE_OLED
+    updateDisplay();assert(strstr(fakeScreen[0],"CANCEL SESSION?"));
+#endif
+    pressGo(1500);assert(cancelPrompt && session.state==PAUSED);
+    finishSession();go();assert(cancelPrompt && session.state==PAUSED);
+    holdMode(200);assert(!cancelPrompt && session.state==PAUSED);
+    assert(session.active==heldActive && rangeTimer.total==heldBand && reps.good==2);
+    pressGo(200);assert(session.state==RUNNING);pressGo(200);assert(session.state==PAUSED);
+    holdMode(2200);assert(cancelPrompt);
+    pressGo(200);assert(!cancelPrompt && discardResult && session.state==IDLE);
+    assert(session.active==0 && rangeTimer.total==0 && reps.good==0 && reps.attempts==0);
+    assert(calibrated && targetCm==80 && pressedCm==50);
+    assert(memcmp(savedBytes,EEPROM.bytes,1024)==0);
+#if ENABLE_OLED
+    updateDisplay();assert(strstr(fakeScreen[0],"CANCELLED"));
+    assert(strstr(fakeScreen[1],"NOT SAVED"));
+#endif
+    pressGo(200);assert(session.state==COUNTDOWN && !discardResult);
+    advance(3100);pressGo(1500);assert(session.state==DONE && lastSaveSucceeded);
+  }
   std::cout<<"Station restart, button, timing and EEPROM tests passed\n";
 }

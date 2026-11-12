@@ -149,3 +149,12 @@ The build used installed dependencies despite a failed network index refresh.
 - Uno R3 build checks cover SH1106, SSD1306 and Serial-only configurations.
 - Physical testing with the real sensor and hand trajectory remains required.
 - No app changes or new LED behaviour in this update.
+
+
+## B2.6 cancel confirmation
+
+Firmware-loop tests cover all three exercises, insufficient MODE hold, confirm,
+decline, pause/resume, ignored long GO while confirming, fresh start and normal
+finish/save afterward. Byte-for-byte EEPROM comparisons verify cancellation does
+not change either archive. OLED tests check confirmation and NOT SAVED screens.
+Uno builds cover both OLED drivers and Serial-only. Physical testing remains.
