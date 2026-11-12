@@ -52,4 +52,29 @@ class ExportTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.read([b'EVENT,station,1,wall_sit,IDLE,command_not_available\n'])
     def test_duplicate_id(self): self.assertEqual(len(self.read([HEADER,ROW,ROW,DATA])),1)
 
+class RepExportTests(unittest.TestCase):
+    HEADER=b'# REPSAVED,id,exercise,active_ms,good_reps,attempts,start_cm,pressed_cm,last_travel_cm,history_id\n'
+    ROW=b'REPSAVED,2,chest_press,25000,3,4,80.0,50.0,25.0,1\n'
+    def read(self,lines):
+        port=Port(lines);rows=export.read_rep_history(port,timeout=1,clock=port.clock)
+        self.assertEqual(port.sent,b'rep_history\n');return rows
+    def test_chest_csv(self):
+        rows=self.read([DATA,self.HEADER,self.ROW,b'# END_REP_HISTORY\n'])
+        self.assertEqual(rows[0]['good_reps'],3);self.assertEqual(rows[0]['good_rep_percent'],'75.0')
+        self.assertEqual(rows[0]['required_travel_cm'],'24.0');self.assertEqual(rows[0]['return_tolerance_cm'],'6.0')
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'reps.csv';export.write_csv(path,rows,reps=True)
+            with path.open(encoding='utf-8-sig',newline='') as f:saved=list(csv.DictReader(f))
+            self.assertEqual(saved[0]['short_attempts'],'1');self.assertEqual(saved[0]['exercise'],'chest_press')
+            with self.assertRaises(FileExistsError):export.write_csv(path,rows,reps=True)
+    def test_empty_and_fragments(self):
+        self.assertEqual(self.read([self.HEADER,b'# No saved rep sessions\n']),[])
+        self.assertEqual(len(self.read([self.HEADER,self.ROW[:15],self.ROW[15:],b'# END_REP_HISTORY\n'])),1)
+    def test_incomplete_invalid_and_conflicting(self):
+        with self.assertRaises(TimeoutError):self.read([self.HEADER,self.ROW,DATA])
+        with self.assertRaises(ValueError):self.read([self.HEADER,self.ROW.replace(b',3,4,',b',5,4,')])
+        with self.assertRaises(ValueError):self.read([self.HEADER,self.ROW,self.ROW.replace(b',3,4,',b',2,4,')])
+        row=export.parse_rep_saved(self.ROW.decode().replace(',3,4,',',0,0,'))
+        self.assertEqual(row['good_rep_percent'],'')
+
 if __name__=='__main__': unittest.main()

@@ -261,3 +261,11 @@ wall-sit/plank only; chest-press app integration and the blinking LED are deferr
 
 See [calibration, controls and physical tests](docs/CHEST_PRESS.md). This update
 requires uploading `HoldStation/HoldStation.ino`; it does not require a new PC app.
+
+
+### B2.6: discard an attempt without saving
+
+In any exercise, short GO pauses; hold MODE for **2 seconds** and release to open
+CANCEL SESSION? Short GO confirms discard; short MODE returns to PAUSED. Saved
+history and calibration are kept. The OLED confirms CANCELLED / NOT SAVED.
+Chest's title is shortened to CHEST B2.6. The app and LED remain unchanged.
