@@ -31,6 +31,7 @@ HoldTiming rangeTimer;
 SessionArchive<EEPROMClass> archive(EEPROM);
 uint8_t profile=0; // 0=wall sit, 1=plank
 bool calibrated=false, calibrating=false, distanceValid=false, inside=false;
+bool finalResultShown=false, lastSaveSucceeded=false;
 float targetCm=0, toleranceCm=HOLD_PROFILES[0].toleranceCm, distanceCm=0;
 float history[5]={}, calSum=0, calSquareSum=0;
 uint8_t historyCount=0, historyNext=0, calCount=0;
@@ -52,6 +53,7 @@ void emit(const char* type,const __FlashStringHelper* note) {
   Serial.print(',');Serial.println(note);
 }
 void resetSession() {
+  finalResultShown=false;lastSaveSucceeded=false;
   session.reset(millis());rangeTimer.clear();
   historyCount=0;distanceValid=false;inside=false;calibrating=false;
   emit("EVENT",F("reset_calibration_retained"));
@@ -150,6 +152,7 @@ void finishSession() {
   SavedSession r={0,session.active,rangeTimer.total,
     uint16_t(targetCm*10+0.5f),uint16_t(toleranceCm*10+0.5f),profile};
   bool saved=archive.append(r);
+  lastSaveSucceeded=saved;finalResultShown=false;
   emit("SUMMARY",saved?F("saved_to_eeprom"):F("save_failed"));
   if(saved)printSaved(r);
 }
@@ -165,7 +168,7 @@ void handleCommand(char* line) {
   else if(!strncmp(line,"band ",5) && (session.state==IDLE || session.state==DONE)){
     float n=atof(line+5);if(n>=1 && n<=20){toleranceCm=n;emit("EVENT",F("band_changed_cm"));}
   }
-  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_2.1"));
+  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_2.2"));
   else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM history version"));
   else emit("EVENT",F("command_not_available"));
 }
@@ -196,21 +199,27 @@ void writeDisplayLine(uint8_t row, const char* text) {
 // Text-only U8x8 avoids a large framebuffer on the memory-limited Uno R3.
 void updateDisplay() {
 #if ENABLE_OLED
+  // Keep the completed result still; live range/status must not redraw it.
+  if(session.state==DONE && finalResultShown)return;
+  if(session.state!=DONE)finalResultShown=false;
   char text[17];
-  writeDisplayLine(0,profile==0?"WALL SIT B2.1":"PLANK B2.1");
+  writeDisplayLine(0,profile==0?"WALL SIT B2.2":"PLANK B2.1");
   writeDisplayLine(1,calibrating?"CALIBRATING":stateName(session.state));
   snprintf(text,sizeof(text),"Active %lus",(unsigned long)(session.active/1000));
   writeDisplayLine(2,text);
-  snprintf(text,sizeof(text),"In band %lu.%lus",
-    (unsigned long)(rangeTimer.total/1000),(unsigned long)((rangeTimer.total%1000)/100));
+  snprintf(text,sizeof(text),"Band %lu.%us",
+    (unsigned long)(rangeTimer.total/1000),(unsigned int)((rangeTimer.total%1000)/100));
   writeDisplayLine(3,text);
-  if(distanceValid){snprintf(text,sizeof(text),"Range %ucm",(unsigned int)(distanceCm+0.5f));writeDisplayLine(4,text);}
+  if(session.state==DONE)writeDisplayLine(4,lastSaveSucceeded?"SAVED TO EEPROM":"SAVE FAILED");
+  else if(distanceValid){snprintf(text,sizeof(text),"Range %ucm",(unsigned int)(distanceCm+0.5f));writeDisplayLine(4,text);}
   else writeDisplayLine(4,"NO VALID ECHO");
   if(calibrated){snprintf(text,sizeof(text),"Ref %ucm +/-%u",(unsigned int)(targetCm+0.5f),(unsigned int)toleranceCm);writeDisplayLine(5,text);}
   else writeDisplayLine(5,"HOLD MODE TO CAL");
-  writeDisplayLine(6,calibrated?(inside?"WITHIN BAND":"OUTSIDE BAND"):"NEEDS REFERENCE");
+  writeDisplayLine(6,session.state==DONE?"MODE=exercise":
+    (calibrated?(inside?"WITHIN BAND":"OUTSIDE BAND"):"NEEDS REFERENCE"));
   writeDisplayLine(7,session.state==DONE?"GO=new attempt":
     (session.state==RUNNING?"GO=pause hold=end":"GO=start/resume"));
+  if(session.state==DONE)finalResultShown=true;
 #endif
 }
 void setup() {
