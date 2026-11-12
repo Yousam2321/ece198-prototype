@@ -32,6 +32,9 @@ SessionArchive<EEPROMClass> archive(EEPROM);
 uint8_t profile=0; // 0=wall sit, 1=plank
 bool calibrated=false, calibrating=false, distanceValid=false, inside=false;
 bool finalResultShown=false, lastSaveSucceeded=false;
+bool erasePrompt=false, eraseWaitRelease=false, eraseChordActive=false, eraseCanOpen=false;
+uint8_t eraseResult=0; // 0=none, 1=cleared, 2=erase failed
+uint32_t eraseChordAt=0;
 float targetCm=0, toleranceCm=HOLD_PROFILES[0].toleranceCm, distanceCm=0;
 float history[5]={}, calSum=0, calSquareSum=0;
 uint8_t historyCount=0, historyNext=0, calCount=0;
@@ -53,7 +56,7 @@ void emit(const char* type,const __FlashStringHelper* note) {
   Serial.print(',');Serial.println(note);
 }
 void resetSession() {
-  finalResultShown=false;lastSaveSucceeded=false;
+  finalResultShown=false;lastSaveSucceeded=false;eraseResult=0;
   session.reset(millis());rangeTimer.clear();
   historyCount=0;distanceValid=false;inside=false;calibrating=false;
   emit("EVENT",F("reset_calibration_retained"));
@@ -62,6 +65,7 @@ void resetSession() {
 void chooseMode(uint8_t next) {
   if(session.state==DONE)resetSession();
   if(session.state!=IDLE || calibrating || next>1 || next==profile)return;
+  eraseResult=0;
   profile=next;calibrated=false;toleranceCm=HOLD_PROFILES[profile].toleranceCm;rangeTimer.clear();
   historyCount=0;distanceValid=false;inside=false;
   emit("EVENT",F("mode_changed_recalibrate"));
@@ -70,6 +74,7 @@ void chooseMode(uint8_t next) {
 void startCalibration() {
   if(session.state==DONE)resetSession();
   if(session.state!=IDLE){emit("EVENT",F("calibrate_requires_idle"));return;}
+  eraseResult=0;
   calibrating=true;calibrated=false;calSum=0;calSquareSum=0;calCount=0;calAt=millis();
   historyCount=0;distanceValid=false;inside=false;
   emit("EVENT",F("calibrate_2s_hold_reference_position"));
@@ -121,6 +126,7 @@ void go() {
   // A completed session never toggles back to DONE on the next short press.
   if(session.state==DONE)resetSession();
   if(session.state==IDLE && !calibrated){emit("EVENT",F("calibrate_first"));return;}
+  eraseResult=0;
   session.go(millis());rangeTimer.breakContinuity();
   emit("EVENT",F("button_or_go"));
 }
@@ -156,6 +162,43 @@ void finishSession() {
   emit("SUMMARY",saved?F("saved_to_eeprom"):F("save_failed"));
   if(saved)printSaved(r);
 }
+// Both buttons open a confirmation menu, only when no session is active.
+void eraseHistory() {
+  if((session.state!=IDLE && session.state!=DONE) || calibrating)return;
+  bool cleared=archive.clear();
+  if(cleared)resetSession();
+  eraseResult=cleared?1:2;finalResultShown=false;
+  emit("EVENT",cleared?F("history_cleared"):F("history_erase_failed"));
+}
+bool handleEraseButtons(uint32_t now,ButtonEvent a,ButtonEvent b) {
+  bool both=goButton.stable && modeButton.stable;
+  bool any=goButton.stable || modeButton.stable;
+  if(erasePrompt){
+    if(eraseWaitRelease){if(!any)eraseWaitRelease=false;return true;}
+    if(a==SHORT_PRESS && b==NO_PRESS && !modeButton.stable){
+      erasePrompt=false;eraseHistory();
+    }else if(b==SHORT_PRESS && a==NO_PRESS && !goButton.stable){
+      erasePrompt=false;finalResultShown=false;
+      emit("EVENT",F("history_erase_cancelled"));
+    }
+    return true;
+  }
+  if(eraseChordActive){
+    if(both && eraseCanOpen && !calibrating &&
+       (session.state==IDLE || session.state==DONE) &&
+       uint32_t(now-eraseChordAt)>=3000){
+      erasePrompt=true;eraseWaitRelease=true;eraseChordActive=false;
+      finalResultShown=false;emit("EVENT",F("history_erase_prompt"));
+    }else if(!any)eraseChordActive=false;
+    return true;
+  }
+  if(both){
+    eraseChordActive=true;eraseChordAt=now;
+    eraseCanOpen=!calibrating && (session.state==IDLE || session.state==DONE);
+    return true;
+  }
+  return false;
+}
 // Both wall sit and plank use this controller; only reference placement differs.
 void handleCommand(char* line) {
   if(!strcmp(line,"go"))go();
@@ -168,7 +211,7 @@ void handleCommand(char* line) {
   else if(!strncmp(line,"band ",5) && (session.state==IDLE || session.state==DONE)){
     float n=atof(line+5);if(n>=1 && n<=20){toleranceCm=n;emit("EVENT",F("band_changed_cm"));}
   }
-  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_2.2"));
+  else if(!strcmp(line,"version"))Serial.println(F("# ECE198_B_2.3"));
   else if(!strcmp(line,"help"))Serial.println(F("# go cal finish reset wall plank band CM history version"));
   else emit("EVENT",F("command_not_available"));
 }
@@ -199,11 +242,26 @@ void writeDisplayLine(uint8_t row, const char* text) {
 // Text-only U8x8 avoids a large framebuffer on the memory-limited Uno R3.
 void updateDisplay() {
 #if ENABLE_OLED
+  if(erasePrompt){
+    writeDisplayLine(0,"ERASE HISTORY?");
+    writeDisplayLine(1,"Delete ALL saves");
+    writeDisplayLine(2,eraseWaitRelease?"Release BOTH":"GO=yes MODE=no");
+    writeDisplayLine(3,"CSV files kept");
+    writeDisplayLine(4,"");writeDisplayLine(5,"");writeDisplayLine(6,"");
+    writeDisplayLine(7,"B2.3");return;
+  }
+  if(eraseResult){
+    writeDisplayLine(0,eraseResult==1?"HISTORY CLEARED":"ERASE FAILED");
+    writeDisplayLine(1,"GO=next session");writeDisplayLine(2,"MODE=exercise");
+    writeDisplayLine(3,"CSV files kept");
+    writeDisplayLine(4,"");writeDisplayLine(5,"");writeDisplayLine(6,"");
+    writeDisplayLine(7,"B2.3");return;
+  }
   // Keep the completed result still; live range/status must not redraw it.
   if(session.state==DONE && finalResultShown)return;
   if(session.state!=DONE)finalResultShown=false;
   char text[17];
-  writeDisplayLine(0,profile==0?"WALL SIT B2.2":"PLANK B2.1");
+  writeDisplayLine(0,profile==0?"WALL SIT B2.3":"PLANK B2.1");
   writeDisplayLine(1,calibrating?"CALIBRATING":stateName(session.state));
   snprintf(text,sizeof(text),"Active %lus",(unsigned long)(session.active/1000));
   writeDisplayLine(2,text);
@@ -245,11 +303,14 @@ void loop() {
   now=millis(); // Commands/EEPROM reads may take time; sample buttons with fresh time.
   ButtonEvent a=goButton.update(digitalRead(GO_PIN)==LOW,now);
   ButtonEvent b=modeButton.update(digitalRead(MODE_PIN)==LOW,now);
+  if(!handleEraseButtons(now,a,b)){
   if(a==SHORT_PRESS){emit("EVENT",F("go_short"));go();}
   // Long GO is ignored in IDLE, COUNTDOWN and DONE: no empty sessions.
   if(a==LONG_PRESS){emit("EVENT",F("go_long"));finishSession();}
   if(b==SHORT_PRESS)chooseMode(1-profile);
   if(b==LONG_PRESS)startCalibration();
+  }
+  now=millis(); // Refresh after any EEPROM erasing.
   measureDistance(now);
   if(uint32_t(millis()-lastRange)>150){distanceValid=false;inside=false;rangeTimer.breakContinuity();}
   digitalWrite(LED_BUILTIN,session.state==RUNNING && inside);
