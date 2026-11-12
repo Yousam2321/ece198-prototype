@@ -1,6 +1,6 @@
 #include <cassert>
 #include <iostream>
-#include "../WearableMonitor/PrototypeCore.h"
+#include "../HoldStation/PrototypeCore.h"
 using namespace ece198;
 int main() {
   // Countdown, running, pause and resume must never credit stopped time.
