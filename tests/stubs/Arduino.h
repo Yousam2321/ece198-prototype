@@ -1,6 +1,9 @@
 #pragma once
 #include <stdint.h>
 #include <stdio.h>
+#include <sstream>
+#include <iomanip>
+#include <string>
 struct __FlashStringHelper;
 #define F(s) reinterpret_cast<const __FlashStringHelper*>(s)
 const int HIGH=1, LOW=0, INPUT_PULLUP=2, OUTPUT=3, INPUT=4, LED_BUILTIN=13;
@@ -15,12 +18,14 @@ inline void delayMicroseconds(int){}
 inline uint32_t pulseIn(int,int,uint32_t){return fakePulse;}
 struct FakeSerial {
   void begin(int){}
-  void println(){}
+  std::string output;
+  void println(){output+='\n';}
   int available(){return 0;}
   char read(){return 0;}
-  template<class T>void print(T){}
-  template<class T>void print(T,int){}
-  template<class T>void println(T){}
-  template<class T>void println(T,int){}
+  void print(const __FlashStringHelper* p){output+=reinterpret_cast<const char*>(p);}
+  template<class T>void print(T value){std::ostringstream s;s<<value;output+=s.str();}
+  template<class T>void print(T value,int places){std::ostringstream s;s<<std::fixed<<std::setprecision(places)<<value;output+=s.str();}
+  template<class T>void println(T value){print(value);println();}
+  template<class T>void println(T value,int places){print(value,places);println();}
 };
 extern FakeSerial Serial;

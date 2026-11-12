@@ -202,5 +202,85 @@ int main(){
   modern.id=0;assert(migrated.append(modern) && modern.id==1 && modern.historyId==2);
   SessionArchive<EEPROMClass> sameAfterPower(migratedMemory);
   assert(sameAfterPower.readId(1,r) && r.tailKnown && r.historyId==2);
+  // Chest press: two distinct stable endpoint calibrations, using real pulse
+  // conversion/filtering and the existing physical GO/MODE controller.
+  auto atDistance=[](float cm){fakePulse=uint32_t(cm*2/.0343f+.5f);advance(650);};
+  resetSession();chooseMode(2);assert(profile==2 && !calibrated);
+  atDistance(80);startCalibration();advance(2200);
+  assert(chestAwaitEnd && !calibrated && fabsf(targetCm-80)<.1f);
+  go();assert(session.state==IDLE); // One point is not enough to start.
+  atDistance(76);startCalibration();advance(2200);
+  assert(chestAwaitEnd && !calibrated); // Reject a noise-sized reference travel.
+  atDistance(50);startCalibration();advance(2200);
+  assert(calibrated && !chestAwaitEnd && fabsf(chestTravel()-30)<.1f);
+  uint32_t holdLatest=archive.latestId();
+  pressGo(200);advance(3100);atDistance(50);
+  assert(session.state==RUNNING && reps.good==0 && reps.phase==ChestPressCounter::NEED_START);
+  atDistance(80);assert(reps.phase==ChestPressCounter::READY);
+  atDistance(70);atDistance(80);assert(reps.good==0 && reps.attempts==1);
+  atDistance(55);advance(2000);assert(reps.good==0); // Holding the press earns no extra reps.
+  atDistance(80);assert(reps.good==1 && reps.attempts==2);
+  // Pause mid-press discards just that unfinished cycle; completed reps remain.
+  atDistance(50);pressGo(200);assert(session.state==PAUSED && reps.good==1);
+  atDistance(80);pressGo(200);advance(600);assert(reps.good==1 && reps.attempts==2);
+  // Missing echo cannot supply the return half of a rep.
+  atDistance(50);fakePulse=0;advance(300);atDistance(80);
+  assert(reps.good==1 && reps.attempts==2);
+  atDistance(50);atDistance(80);assert(reps.good==2 && reps.attempts==3);
+  // Distance in the return band is enough: 84 cm is within +/-6 cm of 80 cm.
+  atDistance(55);atDistance(84);assert(reps.good==3 && reps.attempts==4);
+  pressGo(1500);assert(session.state==DONE && lastSaveSucceeded);
+  SavedRepSession chestSaved;
+  assert(repArchive.latestId()==1 && repArchive.readId(1,chestSaved));
+  assert(chestSaved.good==3 && chestSaved.attempts==4 && chestSaved.activeMs>0);
+  assert(chestSaved.startMm>=799 && chestSaved.startMm<=801);
+  assert(chestSaved.pressedMm>=499 && chestSaved.pressedMm<=501);
+  assert(archive.latestId()==holdLatest); // Rep saves do not consume hold slots.
+  RepSessionArchive<EEPROMClass> repReboot(EEPROM);
+  assert(repReboot.readId(1,chestSaved) && chestSaved.good==3);
+  finishSession();assert(repArchive.latestId()==1); // Never save DONE twice.
+  Serial.output.clear();showHistory();
+  assert(Serial.output.find("# END_HISTORY")!=std::string::npos);
+  assert(Serial.output.find("chest_press")==std::string::npos); // Old PC app still reads holds.
+  Serial.output.clear();showRepHistory();
+  assert(Serial.output.find("REPSAVED,1,chest_press,")!=std::string::npos);
+#if ENABLE_OLED
+  updateDisplay();assert(strstr(fakeScreen[0],"CHEST PRESS B2.5"));
+  assert(strstr(fakeScreen[2],"Good 3/4"));assert(strstr(fakeScreen[4],"SAVED TO EEPROM"));
+  unsigned int fixedChestWrites=fakeOledWrites;
+  atDistance(100);updateDisplay();assert(fakeOledWrites==fixedChestWrites);
+#endif
+  pressGo(200);assert(session.state==COUNTDOWN && reps.good==0 && reps.attempts==0 && calibrated);
+  advance(3100);atDistance(80);atDistance(50);atDistance(80);
+  assert(reps.good==1);pressGo(1500);assert(repArchive.latestId()==2);
+  // MODE cycles all three modes, clearing each exercise's calibration.
+  auto pressMode=[](){fakePins[MODE_PIN]=LOW;advance(200);fakePins[MODE_PIN]=HIGH;advance(60);};
+  pressMode();assert(profile==0 && !calibrated);
+  pressMode();assert(profile==1 && !calibrated);
+  pressMode();assert(profile==2 && !calibrated);
+  // Clearing the menu's ALL history removes both independent archives.
+  eraseHistory();assert(archive.latestId()==0 && repArchive.latestId()==0);
+  assert(repReboot.latestId()==0);
+
+  // The separate chest archive never writes hold records or the shared journal.
+  EEPROMClass repMemory;SessionArchive<EEPROMClass> untouchedHolds(repMemory);
+  SavedSession untouched={0,10000,9000,500,100,0,1000,0,true,true};
+  assert(untouchedHolds.append(untouched));
+  RepSessionArchive<EEPROMClass> repLog(repMemory);
+  for(int i=1;i<=11;++i){
+    SavedRepSession v={0,30000,untouchedHolds.historyId(),5,6,800,500,250};
+    assert(repLog.append(v) && v.id==uint32_t(i));
+  }
+  assert(!repLog.readId(1,chestSaved) && repLog.readId(2,chestSaved) && repLog.readId(11,chestSaved));
+  assert(untouchedHolds.readId(1,untouched) && untouched.inBandMs==9000 && untouched.tailKnown);
+  for(int cut=0;cut<27;++cut){
+    EEPROMClass interrupted=repMemory;interrupted.writes=0;interrupted.failAfter=cut;
+    RepSessionArchive<EEPROMClass> partial(interrupted);
+    SavedRepSession v={0,30000,1,4,5,800,500,250};
+    try{partial.append(v);}catch(int){}
+    assert(!partial.readId(12,chestSaved) && partial.readId(11,chestSaved));
+  }
+  assert(repLog.clear() && repLog.latestId()==0);
+  assert(untouchedHolds.readId(1,untouched) && untouched.tailKnown && untouchedHolds.historyId()==1);
   std::cout<<"Station restart, button, timing and EEPROM tests passed\n";
 }
