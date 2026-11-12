@@ -4,11 +4,21 @@
 #include "stubs/Arduino.h"
 #include "stubs/EEPROM.h"
 uint32_t fakeNow=0;
+uint32_t fakePulse=0;
 int fakePins[20]={};
 FakeSerial Serial;
 EEPROMClass EEPROM;
 #include "../HoldStation/HoldStation.ino"
 
+// Run the actual firmware loop, including distance measurements and buttons.
+void advance(uint32_t milliseconds){
+  uint32_t end=fakeNow+milliseconds;
+  while(fakeNow<end){++fakeNow;loop();}
+}
+void pressGo(uint32_t milliseconds){
+  fakePins[GO_PIN]=LOW;advance(milliseconds);
+  fakePins[GO_PIN]=HIGH;advance(60);
+}
 int main(){
   // Actual station controller: a long press while idle cannot finish/save.
   resetSession();finishSession();
@@ -62,5 +72,29 @@ int main(){
     assert(!trial.readId(26,r));assert(trial.readId(25,r));
   }
   memory.bytes[(25-1)%20*21+7]^=1;assert(!log.readId(25,r)); // CRC detects damage.
+  // Integration regression: actual pulse processing must count in-band time,
+  // and physical-button events must complete and restart two consecutive sessions.
+  for(int& pin:fakePins)pin=HIGH;
+  goButton=Button();modeButton=Button();
+  resetSession();profile=1;calibrated=false;fakePulse=2915; // Approximately 50 cm.
+  startCalibration();advance(2200);
+  assert(calibrated && distanceValid && inside);
+  pressGo(1500);assert(session.state==IDLE); // Long idle GO cannot finish.
+  uint32_t firstId=archive.latestId();
+  for(int attempt=0;attempt<2;++attempt){
+    pressGo(200);assert(session.state==COUNTDOWN);
+    assert(session.active==0 && rangeTimer.total==0);
+    advance(3100);assert(session.state==RUNNING);
+    advance(5000);
+    assert(rangeTimer.total>4800 && rangeTimer.total<=session.active);
+    pressGo(200);assert(session.state==PAUSED);
+    uint32_t held=rangeTimer.total,activeHeld=session.active;
+    advance(1000);assert(rangeTimer.total==held && session.active==activeHeld);
+    pressGo(200);assert(session.state==RUNNING);advance(1000);
+    pressGo(1500);assert(session.state==DONE);
+    assert(archive.latestId()==firstId+attempt+1);
+    advance(1000);assert(session.state==DONE);
+    pressGo(1500);assert(session.state==DONE); // Repeated long GO cannot duplicate save.
+  }
   std::cout<<"Station restart, button, timing and EEPROM tests passed\n";
 }
