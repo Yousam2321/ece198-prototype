@@ -1,4 +1,4 @@
-"""ECE198 Results: a Windows desktop app for Solution B's measured holds."""
+"""ECE198 Results: Part A rep counts and Part B hold/chest measurements."""
 import csv
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "tools") not in sys.path: sys.path.insert(0, str(ROOT / "tools"))
 from export_sessions import read_history, write_csv
 from evaluation import (EXERCISES, ResultStore, criteria_text, evaluate, load_csv,
-                        normalize, progression, validate_criteria, attempt_number)
+                        normalize, progression, validate_criteria, attempt_number, COUNT_EXERCISES)
 from presentation import result_label, short_feedback, progress_summary
 from report_data import preview_values, export_assessment_csv
 from importing import read_all_history
@@ -65,7 +65,7 @@ class ResultsApp:
         viewport.bind("<Configure>",lambda event:viewport.itemconfigure(window,width=event.width))
         root.bind("<MouseWheel>",lambda event:viewport.yview_scroll(int(-event.delta/120),"units"))
         ttk.Label(outer, text="Exercise results", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(outer, text="Wall sit / plank: hold time and consistency. Chest press: good reps and percentage.").pack(anchor="w", pady=(1,12))
+        ttk.Label(outer, text="Part B: wall sit, plank, chest press. Part A: squats and lateral raises.").pack(anchor="w", pady=(1,12))
         top=ttk.Frame(outer);top.pack(fill="x")
         ttk.Label(top, text="Participant label:").pack(side="left")
         self.person=tk.StringVar(value="Participant 1")
@@ -78,6 +78,7 @@ class ResultsApp:
         criteria=ttk.LabelFrame(outer,text="1. Set and confirm criteria",padding=10);criteria.pack(fill="x",pady=12)
         self.wall=tk.StringVar();self.plank=tk.StringVar();self.minimum=tk.StringVar(value="90")
         self.chest=tk.StringVar();self.rep_minimum=tk.StringVar(value="90")
+        self.squats=tk.StringVar();self.raises=tk.StringVar()
         fields=[("Wall-sit target (s)",self.wall),("Plank target (s)",self.plank),("Required consistency (%)",self.minimum)]
         for i,(label,var) in enumerate(fields):
             ttk.Label(criteria,text=label).grid(row=0,column=i*2,sticky="w",padx=(0,6))
@@ -87,9 +88,13 @@ class ResultsApp:
             ttk.Label(criteria,text=label).grid(row=1,column=column,sticky="w",pady=6)
             ttk.Entry(criteria,textvariable=var,width=8).grid(row=1,column=column+1,sticky="w",padx=(0,16))
             var.trace_add("write",self.criteria_changed)
-        ttk.Button(criteria,text="Review & confirm",command=self.review_criteria).grid(row=2,column=0,columnspan=2,sticky="w",pady=(8,0))
+        for column,label,var in ((0,"Squat target (reps)",self.squats),(2,"Lateral raise target (reps)",self.raises)):
+            ttk.Label(criteria,text=label).grid(row=2,column=column,sticky="w",pady=6)
+            ttk.Entry(criteria,textvariable=var,width=8).grid(row=2,column=column+1,sticky="w",padx=(0,16))
+            var.trace_add("write",self.criteria_changed)
+        ttk.Button(criteria,text="Review & confirm",command=self.review_criteria).grid(row=3,column=0,columnspan=2,sticky="w",pady=(8,0))
         self.criteria_note=tk.StringVar(value="Enter targets for loaded exercises. Percentage goals are editable prototype settings.")
-        ttk.Label(criteria,textvariable=self.criteria_note).grid(row=2,column=2,columnspan=4,sticky="w",pady=(8,0))
+        ttk.Label(criteria,textvariable=self.criteria_note).grid(row=3,column=2,columnspan=4,sticky="w",pady=(8,0))
         self.criteria_controls=list(criteria.winfo_children())
         self.criteria_summary=ttk.Label(criteria,textvariable=self.criteria_note,wraplength=720)
         self.criteria_edit=ttk.Button(criteria,text="Change criteria",command=self.edit_criteria)
@@ -106,7 +111,7 @@ class ResultsApp:
         table=ttk.Frame(outer);table.pack(fill="both",expand=True,pady=(7,10))
         columns=("attempt","exercise","hold","consistency","result")
         self.table=ttk.Treeview(table,columns=columns,show="headings",height=int(self.visible_rows.get()),selectmode="browse")
-        for key,title,width in zip(columns,("Session","Exercise","Time / good reps","Consistency / good %","Result / reason"),(60,105,130,160,325)):
+        for key,title,width in zip(columns,("Session","Exercise","Time / reps","Consistency / good %","Result / reason"),(60,105,130,160,325)):
             self.table.heading(key,text=title);self.table.column(key,width=width,anchor="w")
         self.table.pack(side="left",fill="both",expand=True)
         scroll=ttk.Scrollbar(table,orient="vertical",command=self.table.yview);scroll.pack(side="right",fill="y")
@@ -130,7 +135,7 @@ class ResultsApp:
         ttk.Button(foot,text="Delete selected row",command=self.delete_selected_row).pack(side="left",padx=8)
         self.status=tk.StringVar(value="Ready. Local history is kept on this computer; use participant labels to keep people separate.")
         ttk.Label(outer,textvariable=self.status,wraplength=1000).pack(anchor="w",pady=(9,0))
-        ttk.Label(outer,text="This evaluates measured proximity and duration, not full exercise form. Import time is not the session date.",foreground="#526578",wraplength=1000).pack(anchor="w",pady=(4,0))
+        ttk.Label(outer,text="Results use recorded counts, proximity and duration. Import time is not the session date.",foreground="#526578",wraplength=1000).pack(anchor="w",pady=(4,0))
         root.protocol("WM_DELETE_WINDOW",self.close)
         self.open_profile()
         root.after(100,self.check_jobs)
@@ -159,7 +164,7 @@ class ResultsApp:
 
     def criteria(self):
         targets={}
-        for key,var in (("wall_sit",self.wall),("plank",self.plank),("chest_press",self.chest)):
+        for key,var in (("wall_sit",self.wall),("plank",self.plank),("chest_press",self.chest),("squats",self.squats),("lateral_raises",self.raises)):
             if not var.get().strip():continue
             try:targets[key]=float(var.get())
             except ValueError:raise ValueError(f"Enter a numeric target for {EXERCISES[key].lower()}.") from None
@@ -174,14 +179,15 @@ class ResultsApp:
         name=self.person.get().strip()
         if not name: return
         saved=self.store.criteria(name)
-        if saved:
+        if saved and 'targets' in saved and 'minimum' in saved:
             self.wall.set(str(saved["targets"].get("wall_sit","")))
             self.plank.set(str(saved["targets"].get("plank","")))
             self.chest.set(str(saved["targets"].get("chest_press","")))
+            self.squats.set(str(saved["targets"].get("squats","")));self.raises.set(str(saved["targets"].get("lateral_raises","")))
             self.rep_minimum.set(str(saved.get("rep_minimum",90)))
             self.minimum.set(str(saved["minimum"]))
         else:
-            self.wall.set("");self.plank.set("");self.chest.set("");self.minimum.set("90");self.rep_minimum.set("90")
+            self.wall.set("");self.plank.set("");self.chest.set("");self.squats.set("");self.raises.set("");self.minimum.set("90");self.rep_minimum.set("90")
         self.confirmed=False
         self.rows=self.store.load(name)
         self.refresh_table()
@@ -197,8 +203,12 @@ class ResultsApp:
         dialog=tk.Toplevel(self.root);dialog.title("Confirm evaluation criteria");dialog.transient(self.root)
         dialog.geometry("760x520");dialog.grab_set()
         ttk.Label(dialog,text="Please confirm before evaluating",style="Heading.TLabel").pack(anchor="w",padx=18,pady=14)
-        ttk.Label(dialog,text=criteria_text(targets,minimum,rep_minimum),wraplength=680,justify="left").pack(anchor="w",padx=18)
-        buttons=ttk.Frame(dialog,padding=18);buttons.pack(side="bottom",fill="x")
+        body=ttk.Frame(dialog);body.pack(fill="both",expand=True,padx=18,pady=(0,12))
+        rules=tk.Text(body,wrap="word",font=("Segoe UI",10),height=15,bg="#f3f6fb",relief="flat")
+        scroll=ttk.Scrollbar(body,orient="vertical",command=rules.yview)
+        rules.configure(yscrollcommand=scroll.set);rules.pack(side="left",fill="both",expand=True);scroll.pack(side="right",fill="y")
+        rules.insert('1.0',criteria_text(targets,minimum,rep_minimum));rules.configure(state='disabled')
+        buttons=ttk.Frame(dialog,padding=18);buttons.pack(before=body,side="bottom",fill="x")
         ttk.Button(buttons,text="Back",command=dialog.destroy).pack(side="left")
         def confirm():
             self.accept_criteria(targets,minimum,rep_minimum)
@@ -209,7 +219,7 @@ class ResultsApp:
         self.store.save_criteria(self.person.get().strip(),targets,minimum,rep_minimum)
         self.confirmed=True
         self.set_criteria_collapsed(True)
-        self.criteria_note.set("Confirmed: "+", ".join(f"{EXERCISES[k]} {v:g}{' reps' if k=='chest_press' else 's'}" for k,v in targets.items())+f". Hold ≥{minimum:g}%; chest ≥{rep_minimum:g}%.")
+        self.criteria_note.set("Confirmed: "+", ".join(f"{EXERCISES[k]} {v:g}{' reps' if k=='chest_press' or k in COUNT_EXERCISES else 's'}" for k,v in targets.items())+f". Hold ≥{minimum:g}%; chest ≥{rep_minimum:g}%.")
         self.refresh_table()
 
     def open_csv(self):
@@ -251,16 +261,17 @@ class ResultsApp:
         self.table.delete(*self.table.get_children())
         criteria=self.criteria() if self.confirmed else None
         for i,row in enumerate(self.rows):
+            counts=row['exercise'] in COUNT_EXERCISES
             chest=row['exercise']=='chest_press'
-            hold=f"{row['good_reps']} good reps" if chest else f"{row['in_band_ms']/1000:.1f}s"
+            hold=f"{row['reps']} reps" if counts else f"{row['good_reps']} good reps" if chest else f"{row['in_band_ms']/1000:.1f}s"
             consistency="Not evaluated";status="Confirm criteria"
             if criteria:
                 result=evaluate(row,*criteria)
-                value=result['good_rep_percent'] if chest else result['consistency_percent']
-                goal=result['target_reps'] if chest else result['target_seconds']
-                hold+=f" / {goal:g}"+(' reps' if chest else 's')
+                value=None if counts else result['good_rep_percent'] if chest else result['consistency_percent']
+                goal=result['target_reps'] if chest or counts else result['target_seconds']
+                hold+=f" / {goal:g}"+(' reps' if chest or counts else 's')
                 threshold=criteria[2] if chest else criteria[1]
-                consistency="Unavailable" if value is None else f"{value:.1f}% / {threshold:g}%"
+                consistency="Count only" if counts else "Unavailable" if value is None else f"{value:.1f}% / {threshold:g}%"
                 status=result_label(result,threshold)
             self.table.insert("","end",iid=str(i),values=(attempt_number(self.rows,i),EXERCISES[row["exercise"]],hold,consistency,status))
         if self.rows:
@@ -279,12 +290,12 @@ class ResultsApp:
             self.stats.set("Open a CSV or read the Arduino to add results.");self.feedback.set("")
             self.progress_text.set("");return
         self.table.see(str(index))
-        row=self.rows[index];chest=row['exercise']=='chest_press'
-        context=f"travel {abs(row['pressed_cm']-row['start_cm']):.1f}cm" if chest else f"target zone ±{row['band_cm']:g}cm"
+        row=self.rows[index];counts=row['exercise'] in COUNT_EXERCISES;chest=row['exercise']=='chest_press'
+        context="recorded reps (Part A)" if counts else f"travel {abs(row['pressed_cm']-row['start_cm']):.1f}cm" if chest else f"target zone ±{row['band_cm']:g}cm"
         self.attempt_title.set(f"{EXERCISES[row['exercise']]} - Session {attempt_number(self.rows,index)} - {context}")
         if not self.confirmed:
             self.verdict.configure(text="Confirm criteria first",fg="#3d5870")
-            measured=f"{row['good_reps']} good / {row['attempts']} attempts" if chest else f"{row['in_band_ms']/1000:.1f}s in zone"
+            measured=f"{row['reps']} reps" if counts else f"{row['good_reps']} good / {row['attempts']} attempts" if chest else f"{row['in_band_ms']/1000:.1f}s in zone"
             self.stats.set(f"Recorded: {measured} | Active: {row['active_ms']/1000:.1f}s")
             self.feedback.set("Enter targets for the loaded exercises, then Review & confirm.")
             self.progress_text.set("");return
@@ -292,7 +303,10 @@ class ResultsApp:
         threshold=rep_minimum if chest else minimum
         color={"Good":"#16734a","Not good yet":"#ae4b1a","Cannot evaluate":"#586b7e"}[r["status"]]
         self.verdict.configure(text=result_label(r,threshold),fg=color)
-        if chest:
+        if counts:
+            bpm='Unavailable' if r['bpm_avg'] is None else f"{r['bpm_avg']:.1f}"
+            self.stats.set(f"Recorded reps {r['rep_count']} / goal {r['target_reps']:g} | Active {r['active_seconds']:.1f}s\nMean accepted BPM: {bpm} | Accepted beat samples: {r['bpm_samples']} (informational)")
+        elif chest:
             pct='Unavailable' if r['good_rep_percent'] is None else f"{r['good_rep_percent']:.1f}%"
             self.stats.set(f"Good reps {r['good_reps']} / goal {r['target_reps']:g} | {r['short_attempts']} short of {r['attempts']} attempts | Good reps {pct} / goal {rep_minimum:g}%\n"
                            f"Active {r['active_seconds']:.1f}s | Required travel {r['required_travel_cm']:.1f}cm | Return within {r['return_tolerance_cm']:.1f}cm")
@@ -322,7 +336,7 @@ class ResultsApp:
         count=self.store.delete_participant(name)
         self.people.configure(values=self.store.participants())
         if self.person.get().strip()==name:
-            self.person.set("");self.wall.set("");self.plank.set("");self.chest.set("");self.minimum.set("90");self.rep_minimum.set("90")
+            self.person.set("");self.wall.set("");self.plank.set("");self.chest.set("");self.squats.set("");self.raises.set("");self.minimum.set("90");self.rep_minimum.set("90")
             self.rows=[];self.confirmed=False;self.refresh_table()
         self.status.set(f"Deleted {name} and {count} local attempt(s). Exported files and Arduino history were kept.")
         return count
@@ -384,34 +398,37 @@ class ResultsApp:
         index=self.selected_index()
         if index is None:return
         current=self.rows[index];targets,minimum,rep_minimum=self.criteria()
+        counts=current['exercise'] in COUNT_EXERCISES
         chest=current['exercise']=='chest_press'
-        rows=[r for r in self.rows if r['exercise']==current['exercise'] and (chest or abs(r['band_cm']-current['band_cm'])<0.001)]
+        rows=[r for r in self.rows if r['exercise']==current['exercise'] and (chest or counts or abs(r['band_cm']-current['band_cm'])<0.001)]
         scored=[(row,evaluate(row,targets,minimum,rep_minimum)) for row in rows]
-        metric="good_rep_percent" if chest else "consistency_percent"
-        requirement=rep_minimum if chest else minimum
+        metric="rep_count" if counts else "good_rep_percent" if chest else "consistency_percent"
+        requirement=targets[current["exercise"]] if counts else rep_minimum if chest else minimum
         scored=[(row,r) for row,r in scored if r[metric] is not None]
         dialog=tk.Toplevel(self.root);dialog.title("Progression — "+EXERCISES[current['exercise']]);dialog.geometry("900x520")
         ttk.Label(dialog,text=f"{self.person.get()} · {EXERCISES[current['exercise']]}",style="Heading.TLabel").pack(anchor="w",padx=16,pady=10)
-        ttk.Label(dialog,text="Same confirmed goals. Chest travel may differ between sessions; see the PDF for distances.").pack(anchor="w",padx=16)
+        ttk.Label(dialog,text="Part A: recorded counts only. Chest travel may differ; see the PDF for details.").pack(anchor="w",padx=16)
         canvas=tk.Canvas(dialog,bg="white",highlightthickness=0);canvas.pack(fill="both",expand=True,padx=16,pady=12)
         def draw(event=None):
             canvas.delete("all");w=max(canvas.winfo_width(),800);h=max(canvas.winfo_height(),350)
             if not scored:canvas.create_text(w/2,h/2,text="No scored sessions to plot yet.",font=("Segoe UI",13));return
             left,right,top,bottom=65,w-35,30,h-70
             canvas.create_line(left,top,left,bottom,right,bottom,fill="#9aa8b5")
-            canvas.create_text(left,15,text="Good reps (%)" if chest else "Consistency (%)",anchor="w",fill="#24445e")
-            for value in (0,25,50,75,100):
-                y=bottom-(bottom-top)*value/100;canvas.create_line(left,y,right,y,fill="#e5ebf0");canvas.create_text(left-10,y,text=str(value),anchor="e")
-            threshold=bottom-(bottom-top)*requirement/100
+            canvas.create_text(left,15,text="Recorded reps" if counts else "Good reps (%)" if chest else "Consistency (%)",anchor="w",fill="#24445e")
+            maximum=max([requirement]+[r[metric] for _,r in scored]+[1])*1.1 if counts else 100
+            for fraction in (0,.25,.5,.75,1):
+                value=maximum*fraction
+                y=bottom-(bottom-top)*fraction;canvas.create_line(left,y,right,y,fill="#e5ebf0");canvas.create_text(left-10,y,text=f"{value:.0f}",anchor="e")
+            threshold=bottom-(bottom-top)*requirement/maximum
             canvas.create_line(left,threshold,right,threshold,fill="#cf9f39",dash=(5,4))
             pts=[]
             for i,(row,r) in enumerate(scored):
                 x=left+(right-left)*(i/(len(scored)-1) if len(scored)>1 else 0.5)
-                y=bottom-(bottom-top)*r[metric]/100;pts.extend((x,y))
+                y=bottom-(bottom-top)*r[metric]/maximum;pts.extend((x,y))
                 canvas.create_oval(x-4,y-4,x+4,y+4,fill="#176eaa",outline="")
                 if len(scored)<=12:canvas.create_text(x,bottom+17,text=f"{i+1}")
             if len(pts)>2:canvas.create_line(*pts,fill="#176eaa",width=2)
-            canvas.create_text((left+right)/2,h-20,text="Session order · dots show percentage · dashed line is your confirmed goal",fill="#3e576b")
+            canvas.create_text((left+right)/2,h-20,text="Session order · dashed line is your confirmed goal",fill="#3e576b")
         canvas.bind("<Configure>",draw);dialog.after(100,draw)
 
     def export_report(self):
@@ -436,11 +453,11 @@ class ResultsApp:
         ttk.Label(dialog,text="Finish and save the session first. Close Arduino Serial Monitor.\nConnecting may reset the Uno; saved summaries remain.",wraplength=530).pack(anchor="w",padx=16,pady=16)
         port=tk.StringVar(value=ports[0].device if ports else "COM10")
         box=ttk.Combobox(dialog,textvariable=port,values=[p.device for p in ports]);box.pack(anchor="w",padx=16)
-        ttk.Label(dialog,text="Select the Solution B Arduino's port.").pack(anchor="w",padx=16,pady=8)
+        ttk.Label(dialog,text="Select either board's port. Part A or B is detected automatically.").pack(anchor="w",padx=16,pady=8)
         def read():
             device=port.get().strip()
             if not device:return
-            dialog.destroy();self.busy=True;self.status.set("Reading hold and chest-press archives…")
+            dialog.destroy();self.busy=True;self.status.set("Detecting board and reading saved sessions…")
             def worker():
                 try:
                     import serial
@@ -475,6 +492,11 @@ def smoke_test():
             holds.append(normalize(dict(session_id=i,exercise=exercise,active_ms=35000,in_band_ms=inside,
                 reference_cm=50,band_cm=10,trailing_out_ms=5000,has_hold=1,history_id=1)))
         # Start with a pre-update profile, then import new chest records into it.
+        app.store.save_criteria('Empty after deletion',{'squats':5},90)
+        with app.store.db:
+            app.store.db.execute('UPDATE settings SET payload=? WHERE participant=?',('{}','Empty after deletion'))
+        app.person.set('Empty after deletion');app.open_profile();assert not app.rows
+        app.store.delete_participant('Empty after deletion');app.person.set('Participant 1')
         app.store.add("Participant 1",holds)
         app.store.save_criteria("Participant 1",{'wall_sit':25,'plank':25},90)
         app.open_profile();assert app.chest.get()=='' and len(app.rows)==10
@@ -497,13 +519,45 @@ def smoke_test():
         app.show_progress();root.update()
         for w in root.winfo_children():
             if isinstance(w,tk.Toplevel):w.destroy()
+        # Import Part A into the same pre-existing B profile. No migration or
+        # profile reset is needed; optional BPM and zero counts remain distinct.
+        assert app.squats.get()=='' and app.raises.get()==''
+        part_a=[normalize(dict(session_id=i,exercise=exercise,active_ms=20000+i*1000,
+                    reps=reps,bpm_avg=bpm,bpm_samples=4 if bpm else 0,history_id=1))
+                for exercise in COUNT_EXERCISES
+                for i,reps,bpm in ((1,2,None),(2,5,72.3),(3,8,75.1))]
+        popup=app.preview_import(part_a,'Synthetic Part A CSV');root.update();popup.destroy()
+        app.store.add('Participant 1',part_a);app.rows=app.store.load('Participant 1')
+        app.squats.set('5');app.raises.set('8');app.accept_criteria(*app.criteria());root.update()
+        assert len(app.table.get_children())==19
+        for exercise in COUNT_EXERCISES:
+            index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==1)
+            app.table.selection_set(str(index));app.show_selected();root.update()
+            assert app.verdict.cget('text')=='Not good yet - rep count'
+            assert 'Unavailable' in app.stats.get() and 'form quality is not measured' in app.feedback.get()
+            index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==3)
+            app.table.selection_set(str(index));app.show_selected();root.update()
+            assert app.verdict.cget('text')=='Good - rep target met' and '75.1' in app.stats.get()
+            assert app.table.item(str(index),'values')[3]=='Count only'
+            app.show_progress();root.after(150);root.update()
+            for w in root.winfo_children():
+                if isinstance(w,tk.Toplevel):w.destroy()
+        # A transient dialog follows the parent window's mapped state. Show
+        # the parent before checking that the confirmation controls are visible.
+        root.deiconify();root.update();app.review_criteria();root.update()
+        review=next(w for w in root.winfo_children() if isinstance(w,tk.Toplevel))
+        assert review.title()=='Confirm evaluation criteria'
+        buttons=[w for body in review.winfo_children() for w in body.winfo_children() if isinstance(w,ttk.Button)]
+        assert any(w.cget('text')=='Confirm and evaluate' and w.winfo_ismapped() for w in buttons)
+        next(w for w in buttons if w.cget('text')=='Confirm and evaluate').invoke();root.update()
+        assert app.confirmed and not review.winfo_exists()
         report=Path('clean_report_preview.pdf') if os.environ.get('ECE198_CAPTURE_PREVIEW') else Path(directory)/'report.pdf'
         if report.exists():report.unlink()  # Synthetic output only.
         build_report(report,'Participant 1',app.rows,*app.criteria())
         assert report.stat().st_size>3000
         csv_path=Path(directory)/'assessed.csv'
         export_assessment_csv(csv_path,'Participant 1',app.rows,*app.criteria())
-        assert len(load_csv(csv_path))==13
+        assert len(load_csv(csv_path))==19
         manager=app.manage_participants();root.update();manager.destroy()
         if os.environ.get('ECE198_CAPTURE_PREVIEW'):
             root.deiconify();root.update();root.after(500);root.update()

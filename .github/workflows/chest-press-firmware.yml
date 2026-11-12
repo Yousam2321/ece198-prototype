@@ -1,17 +1,21 @@
-name: Test and package Solution B firmware
+name: Test and package both Arduino programs
 on:
   pull_request:
     paths:
       - 'HoldStation/**'
+      - 'PartA/**'
       - 'tests/**'
       - 'docs/CHEST_PRESS.md'
+      - 'docs/PART_A.md'
       - '.github/workflows/chest-press-firmware.yml'
   push:
     branches: [main]
     paths:
       - 'HoldStation/**'
+      - 'PartA/**'
       - 'tests/**'
       - 'docs/CHEST_PRESS.md'
+      - 'docs/PART_A.md'
       - '.github/workflows/chest-press-firmware.yml'
   workflow_dispatch:
 permissions:
@@ -21,17 +25,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Test the actual station controller and rep logic
+      - name: Test both actual sketch loops and archives
         run: python tests/run_tests.py
-      - name: Test hold and rep CSV exports
-        run: python -m unittest discover -s tests -p test_export_sessions.py
+      - name: Test all saved-history CSV protocols
+        run: |
+          python -m unittest discover -s tests -p test_export_sessions.py
+          python -m unittest discover -s tests -p test_part_a_export.py
       - uses: arduino/setup-arduino-cli@v2
-      - name: Install Uno core and display library
+      - name: Install board cores and libraries
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr@1.8.8
+          arduino-cli core install arduino:renesas_uno@1.6.0
           arduino-cli lib update-index
-          arduino-cli lib install U8g2
+          arduino-cli lib install U8g2 LiquidCrystal@1.0.7 "SparkFun MAX3010x Pulse and Proximity Sensor Library@1.1.2"
+      - name: Compile original-based Part A for Uno R3
+        run: arduino-cli compile --fqbn arduino:avr:uno --build-path build/parta-r3 PartA
+      - name: Compile original-based Part A for Uno R4 Minima
+        run: arduino-cli compile --fqbn arduino:renesas_uno:minima --build-path build/parta-r4 PartA
       - name: Compile Uno with SH1106 OLED
         run: arduino-cli compile --fqbn arduino:avr:uno --build-path build/sh1106 HoldStation
       - name: Compile Uno with SSD1306 OLED
@@ -40,10 +51,10 @@ jobs:
         run: arduino-cli compile --fqbn arduino:avr:uno --build-property compiler.cpp.extra_flags=-DENABLE_OLED=0 --build-path build/serial HoldStation
       - uses: actions/upload-artifact@v4
         with:
-          name: ECE198-Complete-Project-B2.6
+          name: ECE198-Complete-Project-A1.0-B2.6
           path: |
             HoldStation/
-            WearableMonitor/
+            PartA/
             desktop/
             tools/
             tests/

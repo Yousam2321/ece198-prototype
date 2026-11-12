@@ -1,96 +1,37 @@
-# Exercise-by-exercise guide
+# Implemented exercises and controls
 
-All commands below are separate newline-terminated messages. **Semicolons in this table
-mean “then send the next command”; do not type an entire table sequence on one line.**
-`select` and `teach` require IDLE. Wait through the full eight-second teaching period
-before `go`. After DONE, use `reset` to return to IDLE before changing exercise.
+| Exercise | Board | Measured result |
+|---|---|---|
+| Squats | Part A A1.0 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Lateral raises | Part A A1.0 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Wall sit | Part B B2.6 | Active/in-band time; final continuous departure for corrected consistency |
+| Plank | Part B B2.6 | Active/in-band time; final continuous departure for corrected consistency |
+| Chest press | Part B B2.6 | Completed attempts, good reps, active time and calibrated travel |
 
-## Wearable A (R4 Minima)
+The previous experimental WearableMonitor and unimplemented exercise profiles have been removed. Part A uses the team's working two-exercise sketch. See [PART_A.md](PART_A.md) for thresholds and integration details.
 
-| ID | Exercise | Profile file in WearableMonitor/exercises/ | Implemented behavior | Command sequence |
-|---|---|---|---|---|
-| 0 | Treadmill | `Treadmill.h` | Timed warm-up and 15-minute cardio; optional candidate HR | `select 0; demo; go` |
-| 1 | Thoracic spine rotations | `ThoracicRotations.h` | Timer + manual rep confirmations; no yaw angle measurement | `select 1; go; rep` |
-| 2 | Airplane | `Airplane.h` | Timed hold; observer starts/ends it | `select 2; go; finish` |
-| 3 | Chest press | `ChestPress.h` | Taught candidate full-cycle reps; manual fallback | `select 3; teach; go` |
-| 4 | Glute bridges | `GluteBridges.h` | Taught candidate full-cycle reps; manual fallback | `select 4; teach; go` |
-| 5 | Lat pulldown | `LatPulldown.h` | Taught candidate full-cycle reps; manual fallback | `select 5; teach; go` |
-| 6 | Farmer's carry | `FarmersCarry.h` | Duration + manually entered metres; no force/weight measurement | `select 6; go; distance 10` |
-| 7 | Hip flexor stretch | `HipFlexorStretch.h` | Timed hold; observer starts/ends it | `select 7; go; finish` |
-| 8 | Cat-cow | `CatCow.h` | Taught candidate cycles; no spinal-curvature measurement | `select 8; teach; go` |
+## Part A
 
-## Station B (R3)
+Short START release starts, pauses or resumes. Long START 1 second ends/saves, then clears counters as before. EXERCISE selects Squats / Lat Raises only while stopped; a started paused session saves before switching. Twenty completed sessions persist in EEPROM. Serial `history` exports both exercises; `erase CONFIRM` clears saved A history while stopped. The app judges the rep-count goal only; there is no failed-attempt denominator.
 
-| Exercise | File in HoldStation/exercises/ | Behavior | Command sequence |
-|---|---|---|---|
-| Wall sit | `WallSit.h` | Time within one calibrated distance band | `wall; cal; go` |
-| Plank | `Plank.h` | Time within one calibrated distance band | `plank; cal; go` |
+## Part B wall sit / plank
 
-Wait for the two-second `cal` procedure to finish before `go`.
-Switching station mode invalidates the reference. Each profile supplies its default
-band tolerance. Both defaults are now +/-10cm. The `band 10` command also sets the current
-IDLE/DONE session to +/-10cm.
-This reference distance does not prove full-body alignment or squat depth.
+Select the exercise with a short MODE while stopped. Put the target/body in the chosen reference position and hold MODE (at least 1.2 s, then release) to calibrate; keep it steady during collection. Short GO starts the countdown, then RUNNING. GO short pauses/resumes. The band defaults to ±10 cm. Place/aim the HC-SR04 to obtain stable echoes from the tracked target through the intended movement; it measures range along its beam, not joint angle.
 
-The station uses consecutive valid in-band samples to count hold time. The first
-sample starts a chain; each following qualifying sample adds elapsed time, capped
-at 150 ms per sample. There is no settling delay. Invalid/outside readings and pauses
-break the chain. A stalled loop never earns its full stalled duration.
-The CSV `sample_gap_ms` column helps diagnose slow measurements/display updates.
+In-band time credits consecutive valid in-zone samples; credited gaps are capped at 150 ms. Outside/invalid readings or pauses stop credit. The first qualifying sample earns no preceding interval. Consistency uses in-band time / (active time − last continuous departure), excluding pauses and final departure; earlier departures followed by return remain in the denominator.
 
-### Station results and restart
+## Part B chest press
 
-- Hold GO >=1.2s and release while RUNNING/PAUSED to finish and save once.
-- Long GO in IDLE/COUNTDOWN/DONE does nothing; it cannot create an empty summary.
-- DONE keeps final totals visible. One short GO clears totals and starts a new countdown.
-- Calibration and current tolerance are retained for another attempt; recalibrate if
-  placement changes. MODE can select/calibrate the next exercise from DONE.
-- `history` in Serial Monitor (115200 baud, Newline) prints the latest 20 completed
-  session summaries, oldest first. It works while IDLE, PAUSED or DONE.
-- EEPROM addresses 0..419 hold those summaries across power cycles. The 21st save
-  overwrites the oldest. Each contains ID, exercise, active/in-band milliseconds,
-  reference and tolerance. No calendar date is stored. A power cut during a save
-  can lose that entry; incomplete/corrupt entries are rejected with a commit marker
-  and CRC. Only completed sessions are saved; an unplugged running session is lost.
-- Export the printed SAVED rows to your computer for longer-term storage.
+Use the same distance-sensor wiring. Select Chest press with MODE. Follow its two calibration steps: hold the starting pose and long-press/release MODE to collect it, then do the same at the pressed pose. The two references must differ by at least 10 cm and be within the accepted range. Confirm both before GO starts.
 
-## Shared controls
+A meaningful attempt leaves the start and reaches at least 30% travel. A good rep reaches 80% calibrated travel, then returns within 20% of the start with endpoint confirmation. A completed shorter attempt stays in the attempt count, lowering good-rep percentage. Extra travel is allowed. Incomplete cycles discarded on pause, finish or invalid echoes do not count as completed attempts. See [CHEST_PRESS.md](CHEST_PRESS.md).
 
-- `go`: start with a three-second countdown, or pause/resume a running/paused session.
-- `finish`: emit a session summary and enter DONE.
-- `reset`: return to IDLE; do this from PAUSED/DONE, not while RUNNING.
-- Bare button taps have the same start/pause/resume behavior.
-- Hold and release the wearable button during a session to finish; while IDLE it
-  starts teaching only for a candidate-rep profile.
-- On B, tap MODE to select wall sit/plank; hold >=1.2s and release MODE to calibrate.
+## Part B finish, cancel, save and erase
 
-## Automatic repetition trial
+Hold GO ≥1.2 seconds and release during RUNNING/PAUSED to finish/save. DONE shows a fixed saved-results screen. Short GO starts another session with fresh counters and retained calibration; MODE changes exercise/calibration.
 
-1. Select a supported candidate profile; secure the sensor to a repeatable placement.
-2. Send `teach`. Perform approximately three comfortable full cycles over eight seconds.
-3. A signal-span check chooses the largest axis and normalizes its endpoints.
-   Passing this check does **not** prove rep-count accuracy.
-4. Send `go`; after the countdown compare proposed counts with an observer.
-5. A count requires a LOW -> HIGH -> LOW cycle, with timing and hysteresis checks.
-6. Send `finish`. Repeat three 10-rep trials and record errors, placement and failures.
-7. If unreliable, reset, send `manual` while IDLE, start, then send `rep` per observed rep.
+To stop without saving: pause, hold MODE **2 seconds**, then GO confirms Cancel session or MODE returns. The cancellation does not erase previous history.
 
-Re-teach whenever placement or exercise changes. Do not exaggerate/jerk a movement to
-force a passing signal. Neither acceleration nor ultrasonic distance measures muscle
-activation, force, full technique or pain-free effort.
+To erase saved B history: from IDLE/DONE hold both GO+MODE **3 seconds**, release both, then tap GO to confirm or MODE to cancel. Both hold and chest archives are cleared only after confirmation. Keep power connected until completion. The computer's profiles/CSVs remain.
 
-## Treadmill and optical HR
-
-Default real timing: warm-up 180 seconds (adjustable) then cardio 900 seconds.
-`demo` changes to 5+15 seconds and labels every row DEMO. `real` restores Config.h values.
-Pauses and the startup countdown do not count toward active time.
-
-After enabling verified HR hardware, keep finger contact still. `baseline` while IDLE
-collects a 20-second candidate resting baseline. `goal N` compares against a goal supplied
-for the demonstration; no default physiological goal is chosen. `goal 0` clears it.
-The class/header MAX30105 is expected even with a MAX30102 sensor.
-BPM is suppressed when contact/quality heuristics fail. No SpO2 algorithm is included.
-
-For carry, `distance 10` means **10 metres entered by an observer**, not an automatic
-GPS/accelerometer distance result. For hold/stretch exercises, `finish` records when the
-observer ends a session; there is no independent automatic posture-duration detector.
+Serial `history` reads up to 20 hold records; `rep_history` reads up to 10 chest records. `version` reports B2.6. The new app reads both B archives in one connection; the PowerShell exporter uses `--reps` for chest records and defaults to holds.

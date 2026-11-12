@@ -1,177 +1,36 @@
-# Validation - commented Git repository
+# Validation — Part A A1.0 / Part B B2.6
 
-All seven board configurations compiled after the exercise profiles were separated.
-The physical hardware was not connected to this environment. No claim of measured
-rep-count or heart-rate accuracy follows from these builds.
+No physical board is connected to this environment. Builds and simulated inputs do not establish real rep, range or pulse accuracy.
 
-| Build | Board | Flash bytes used | Static RAM bytes used | Result |
-|---|---|---|---|---|
-| repo_wearable | arduino:renesas_uno:minima | 53076 | 4624 | PASS |
-| repo_hr | arduino:renesas_uno:minima | 61340 | 5968 | PASS |
-| repo_pot | arduino:renesas_uno:minima | 53240 | 4636 | PASS |
-| repo_hr_pot | arduino:renesas_uno:minima | 61504 | 5980 | PASS |
-| repo_station | arduino:avr:uno | 16692 | 1422 | PASS |
-| repo_ssd | arduino:avr:uno | 16692 | 1422 | PASS |
-| repo_serial | arduino:avr:uno | 9376 | 833 | PASS |
+## Part A integration
 
-- Board cores: Arduino AVR 1.8.8; Renesas Uno 1.6.0.
-- Libraries: U8g2 2.37.1; SparkFun MAX3010x 1.1.2.
-- Portable tests passed for countdown, pause/resume, clock wrap, full/partial/fast/
-  expired cycles, range dropouts, long sample gaps and button debounce.
-- Two copies of PrototypeCore.h match; capture_serial.py and run_tests.py pass Python syntax checks.
-- Upstream board-core sources emit warnings; no project-source warning was reported.
-- The R3 OLED build leaves 626 bytes beyond static allocations for stack/runtime data.
-  U8x8 avoids a full-screen buffer; the code avoids String objects and recursion.
+The uploaded working `ECE198_two_working_exercises.ino` was committed as the Part A baseline before integration. Function-body comparisons verify that `updateSquatCounter`, `updateLatRaiseCounter`, `updateAccelerometer` and `updateLCD` are identical to that upload. Existing pins, thresholds, confirmation sample counts, cooldowns and button timings remain. Additions surround start/pause/end/switch and accepted beats to record duration and save before reset.
 
-Hardware checks remain: wiring/supply/interface, OLED driver, body placement,
-repeat-count error, optical contact/motion artifacts, hold geometry and timing.
-Use the four task pages in docs/Team_Build_and_Test_Plan.pdf to record real results.
+| Local build | Core | Flash | Static RAM | Result |
+|---|---|---:|---:|---|
+| Part A, Uno R3 | Arduino AVR 1.8.8 | 18,004 / 32,256 bytes | 1,291 / 2,048 bytes | PASS |
+| Part A, Uno R4 Minima | Renesas Uno 1.6.0 | 66,316 / 262,144 bytes | 5,992 / 32,768 bytes | PASS |
 
-The shared core was given extra explanatory comments after compilation. Its code
-was unchanged; the portable test runner was rerun successfully on those final files.
+Libraries: LiquidCrystal 1.0.7, SparkFun MAX3010x 1.1.2. No full-screen buffer or dynamic String additions are used. R3 leaves 757 bytes after static allocations; runtime stack/physical stability still need bench testing.
 
-## OLED refresh fix — November 11, 2026
+Host tests execute the actual sketch loop with simulated ADC, buttons, clock, pulse and EEPROM. They cover both original rep detectors, running-switch restriction, pause/resume active timing, save-before-END/reset, save-before-switch, no duplicate save, unavailable BPM versus accepted BPM, power-cycle reads, twenty-record ring replacement, corruption rejection, interrupted appends and every erase write boundary. The erase generation hides old entries once committed.
 
-The station now pads each row to 16 characters and only writes rows whose text
-changes. It no longer clears each line before rewriting it every 250 ms.
-The default Uno R3 / SH1106 configuration compiled successfully with the same
-installed core and U8g2 library: 16,704 bytes flash, 1,558 bytes static RAM.
-The row cache costs 136 bytes of static RAM; 490 bytes remain for stack/runtime
-allocations. The compiler reports low available memory, so runtime stability
-still needs hardware testing. Distance acquisition and calibration are unchanged.
-The build used installed dependencies despite a failed network index refresh.
+## Exporter and desktop app
 
-## Station persistence, restart and in-band timing update
+**43 Python tests pass locally**, covering existing hold/chest logic and new Part A protocol, fragment reassembly, explicit completion, rejection of partial/conflicting/invalid data, missing BPM, CSV writing, direct board auto-detection, count-only evaluation, target validation, existing profiles, duplicate import, exact-row deletion, progression and mixed/count-only PDF/CSV reports.
 
-- Default Uno R3/SH1106 build passed: 18,620 bytes flash; 1,265 bytes static RAM,
-  leaving 783 bytes for stack/runtime data. Event strings moved to flash to reduce RAM.
-- EEPROM archive uses addresses 0..419 for 20 records; version, CRC and a commit
-  marker reject incomplete/corrupt entries. No continuous EEPROM writes occur.
-- Host tests execute the actual station sketch with simulated Arduino/EEPROM APIs:
-  idle/countdown long-press finish rejection, duplicate-save prevention, one-press
-  restart with fresh timers, pause/resume and summary contents.
-- Archive tests cover reboot reads, ring overwrite, corruption and interruption at
-  every write boundary. Timing tests cover delayed samples, outside/invalid input,
-  pause, reset and millis rollover. Existing shared-core tests also passed.
-- Physical OLED/button/range/EEPROM behavior still needs testing on the user's board.
-- The wearable still uses its unchanged shared RangeTimer; station now uses HoldTiming.
+Part A is evaluated by recorded rep count only; no failed-attempt percentage is invented. Mean accepted BPM and active time are informational. Missing beats are not a zero BPM result. The app uses the same database location and schema, preserving pre-update profiles and B records. Existing goal settings load with blank new fields until the user adds A goals.
 
-## B2.1 version and end-to-end regression checks
+A synthetic eleven-page report exercises all five exercises, continuation pages, no BPM, zero reps, reason text and same-exercise graphs. Rendered-page checks are separate from numeric assertions. Report samples contain no participant data.
 
-- OLED title and Serial version command identify B2.1, preventing ambiguity
-  between a downloaded folder and the sketch actually running on the Uno.
-- In-band display uses tenths of a second; GO release events identify short/long.
-- Fresh calibration is checked after a DONE reset before starting again.
-- The host integration test now drives the actual firmware loop with simulated
-  HC-SR04 echoes and timed button presses. It calibrates, counts over five seconds
-  in band, pauses/resumes, saves, and repeats a complete second session.
-  It verifies long idle/done presses cannot create empty or duplicate summaries.
-- Uno R3 / default SH1106 build: 18,780 bytes flash; 1,287 bytes static RAM,
-  leaving 761 bytes for stack/runtime. Existing portable tests pass.
-- No physical board is attached here; actual wiring, input signals and timings
-  still need the bench check documented in README.
+Windows CI builds the one-file executable and runs both source and packaged GUI smoke tests. These include opening a pre-update B profile and an empty profile, importing both A exercises, missing/present BPM, exact goal verdicts, the scrollable criteria dialog, graphs, PDF/CSV round trips, participant/row deletion and hold/chest regressions. Check the linked GitHub Actions run for its outcome. The local Linux environment is headless, so Windows is the executable/GUI test environment.
 
-## B2.2 completed OLED screen
+## Part B regression
 
-- DONE renders final times/reference and EEPROM save result once. It no longer
-  renders live range or inside/outside changes; a new session clears the latch.
-- The compact Band label retains tenths without overflowing the 16-character row.
-- OLED-enabled host integration tests verify that sensor changes after DONE cause
-  zero additional OLED writes and that restarting updates the display again.
-  The save-failure display state is checked separately.
-- Shared-core, serial-only and OLED-stub station tests passed. Default Uno
-  R3/SH1106 firmware compiled: 18,912 bytes flash; 1,327 bytes static RAM;
-  721 bytes left for stack/runtime. Physical flicker still needs a board check.
-- GitHub Desktop clone/fetch/pull instructions added to avoid repeated ZIP downloads.
+Every existing `HoldStation/` file matches published main byte-for-byte. Portable core, actual station controller (OLED on/off), hold timing, cancel/DONE/restart/erase and chest-counter tests still pass. CI retains all three B Uno builds (SH1106, SSD1306 and Serial only). There are no new LED behaviours.
 
-## B2.3 button-only erase
+Previously reported user bench checks included stopwatch accuracy, pause/resume, in-band stopping, calibration, GO/MODE behaviour, completed-history power cycle, deletion cancellation and chest repetitions. This integration does not repeat or replace those physical results.
 
-- Both buttons held >=3s in IDLE/DONE open an erase confirmation. Both must be
-  released before a separate short GO can confirm; a short MODE cancels.
-- Tests cover aborted holds, cancel without mutation, release without confirmation,
-  confirmed clear from IDLE and DONE, persistence after controller recreation,
-  IDs restarting at 1, and no erase/finish/calibration from a two-button running hold.
-- OLED tests cover erase prompt and cleared feedback. Archive tests verify bytes
-  0..419 are zeroed and unrelated EEPROM addresses remain untouched.
-- Shared-core, serial-only and OLED-enabled station tests passed. Default Uno R3
-  build: 19,670 bytes flash; 1,456 bytes static RAM; 592 bytes left for runtime/stack.
-- Physical button/UI and EEPROM erase behavior still need testing on the real board.
+## Remaining physical checks
 
-## B2.4 and Windows results app
-
-- Firmware saves final-departure active duration, whether any valid hold was seen,
-  and an archive generation. Pauses do not extend the recorded departure.
-- Base EEPROM summaries at 0..419 remain readable; new metadata at 420..739 is
-  CRC-bound to its base record. Archive generation uses alternating CRC records at
-  900..915 and increments on clear. Old summaries are preserved with unknown metadata.
-- Corrupt/missing extension data never becomes an invented zero ending duration.
-- Tests cover final departure, a middle departure followed by return, pause clocks,
-  zero holds, legacy records, corrupted extensions, interrupted writes at every
-  append boundary, and identities across erase/reboot.
-- Python tests cover exact score boundaries, time/consistency feedback, no invented
-  legacy score, SQLite reopen/deduplication/profile separation, archive generations,
-  and same-exercise/tolerance comparisons.
-- R3 SH1106 build: 21,384 bytes flash; 1,461 bytes static RAM; 587 bytes for stack/runtime.
-- Windows CI builds the executable and smoke-tests both source GUI and packaged EXE.
-  A synthetic-results GUI screenshot is produced for visual review. The GUI cannot
-  run in the local headless Linux environment, so Windows is the GUI test environment.
-- The current Python suite has 18 passing tests, plus the portable C++ station/core
-  tests in serial and OLED-stub configurations. Physical B2.4 testing remains required.
-
-
-## Desktop usability update (app only)
-
-- Python evaluator, parser, report and profile tests: 22 passed locally.
-- Includes complete profile deletion and reopening the database, literal search
-  characters, a bounded list across 10,000 profiles, all failure-reason labels,
-  multi-exercise/tolerance PDF generation, continuation pages and overwrite refusal.
-- Rendered and visually reviewed an eight-page synthetic PDF (no participant data).
-- Windows workflow checks the source GUI and packaged executable: 7/10-row list,
-  selected exercise/attempt, specific failure reasons, PDF creation, participant
-  manager, complete deletion of synthetic profiles and existing progression view.
-- Arduino firmware and hold-evaluation mathematics are unchanged.
-
-
-## B2.5 chest-press firmware
-
-- Full station-loop regressions for wall sit/plank, buttons, hold timing, DONE,
-  power-cycle persistence and erase confirmation still pass, with OLED on/off.
-- Chest-press pulse simulations cover two-point calibration, too-small travel,
-  starting in the extended pose, short/full cycles, endpoint holds, pauses,
-  missing echoes, partial-rep cancellation, finish/restart, mode cycling, fixed
-  DONE display, independent saving and compatibility of the existing hold protocol.
-- Focused counter tests cover exact 80%/20% boundaries, jitter, one-sample spikes,
-  missing data, pause, invalid values, both travel directions and count saturation.
-- Separate rep archive tests cover its ten-slot ring, every interrupted-write
-  position, reopening after simulated reboot and preservation of hold records and
-  generation bytes. The ALL-history menu clears both archives.
-- Existing 22 Python parser/evaluator/report/profile tests passed unchanged.
-- Uno R3 build checks cover SH1106, SSD1306 and Serial-only configurations.
-- Physical testing with the real sensor and hand trajectory remains required.
-- No app changes or new LED behaviour in this update.
-
-
-## B2.6 cancel confirmation
-
-Firmware-loop tests cover all three exercises, insufficient MODE hold, confirm,
-decline, pause/resume, ignored long GO while confirming, fresh start and normal
-finish/save afterward. Byte-for-byte EEPROM comparisons verify cancellation does
-not change either archive. OLED tests check confirmation and NOT SAVED screens.
-Uno builds cover both OLED drivers and Serial-only. Physical testing remains.
-
-
-## Desktop chest integration
-
-- Python tests cover raw chest import, scoring boundaries and both failure reasons,
-  no completed attempts, malformed data, allowed travel overshoot, changed travel,
-  both archive protocols, old-firmware fallback, duplicate IDs across archives,
-  existing profile reopening, assessed-CSV round trips and mixed/zero-attempt PDFs.
-- Existing hold/profile/report/parser tests remain in the suite.
-- The user's two-session CSV was checked locally: both import as 9/12 and 75%.
-  User files are not uploaded to the public repository or build artifacts.
-- A synthetic six-page mixed PDF was rendered and reviewed, including chest
-  summaries, graphs, history and calibration differences.
-- Windows CI checks source and packaged GUI paths: legacy profile, chest imports,
-  specific scores, preview, graphs, PDF/CSV export, deletion and hold regression.
-- Firmware and LED behaviour are unchanged. Physical board reading remains a
-  user-side integration check; serial tests use deterministic protocol fixtures.
+Use [docs/PART_A.md](docs/PART_A.md): compare reps with an observer, pause/resume timing, finish and mode-switch saves, optional BPM contact, completed-session power cycle, A/B app reading, CSV/PDF round trip and intentional history erase. Compare source and board versions/ports before uploading. Export any needed records before ring replacement or intentional erasure.

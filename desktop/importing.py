@@ -4,7 +4,9 @@ from evaluation import normalize
 
 
 def read_all_history(device, **kwargs):
-    holds=read_history(device,**kwargs)
+    metadata={}
+    holds=read_history(device,metadata=metadata,**kwargs)
+    if metadata.get('device')=='part_a':return [normalize(r) for r in holds], '' 
     try:reps=read_rep_history(device,**kwargs)
     except ValueError as error:
         # B2.4 and earlier do not implement rep_history; retain their valid holds.

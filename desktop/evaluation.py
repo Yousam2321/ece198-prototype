@@ -7,17 +7,19 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-EXERCISES = {"wall_sit": "Wall sit", "plank": "Plank", "chest_press": "Chest press"}
+EXERCISES = {"wall_sit": "Wall sit", "plank": "Plank", "chest_press": "Chest press", "squats": "Squats", "lateral_raises": "Lateral raises"}
+COUNT_EXERCISES=("squats","lateral_raises")
 
 
 def criteria_text(targets, minimum, rep_minimum=90):
-    goals=', '.join(f"{EXERCISES[k]} {v:g}{' good reps' if k=='chest_press' else 's'}" for k,v in targets.items())
+    goals=', '.join(f"{EXERCISES[k]} {v:g}{' good reps' if k=='chest_press' else ' reps' if k in COUNT_EXERCISES else 's'}" for k,v in targets.items())
     return (f"Targets: {goals}.\n\n"
             f"Wall sit / plank: Good requires BOTH the in-zone time target and at least {minimum:g}% consistency.\n"
             "Consistency = in-band time / (active time - final continuous departure) x 100. Pauses and final departure are excluded; earlier departures followed by a return still count.\n\n"
             f"Chest press: Good requires BOTH the good-rep target and at least {rep_minimum:g}% good reps.\n"
             "Good-rep percentage = good reps / completed attempts x 100. Short attempts count against it. Unfinished reps discarded by the firmware do not count as attempts. Zero attempts: Cannot evaluate.\n"
             "Each good rep reaches 80% of calibrated travel and returns within 20% of the start. Extra travel is allowed; there is no upper-travel penalty.\n\n"
+            "Part A squats/lateral raises: Good means the recorded rep count reaches the chosen target. No failed-attempt percentage is available. Active time and mean accepted BPM are informational, not scoring criteria.\n\n"
             "No valid hold or missing ending data: Cannot evaluate. Missing echoes may reduce credited results. These are distance measures, not a full-body form or medical grade.\n"
             "Comparisons use the current confirmed goals. Changed chest calibration is flagged. Attempt order is not a calendar date.")
 
@@ -25,8 +27,10 @@ def criteria_text(targets, minimum, rep_minimum=90):
 def validate_criteria(targets, minimum, rep_minimum=90):
     if not targets or not set(targets).issubset(EXERCISES) or any(not math.isfinite(v) or v <= 0 for v in targets.values()):
         raise ValueError("Enter a positive target for the exercises you want to evaluate.")
-    if 'chest_press' in targets and (not float(targets['chest_press']).is_integer() or targets['chest_press']>65535):
-        raise ValueError("Chest-press target must be a whole number from 1 to 65535 good reps.")
+    for key in ('chest_press',)+COUNT_EXERCISES:
+        limit=65535 if key=='chest_press' else 32767
+        if key in targets and (not float(targets[key]).is_integer() or targets[key]>limit):
+            raise ValueError(f'{EXERCISES[key]} target must be a whole number from 1 to {limit} reps.')
     for value,label in ((minimum,'Consistency'),(rep_minimum,'Good-rep percentage')):
         if not math.isfinite(value) or not 0 < value <= 100:
             raise ValueError(f"{label} requirement must be above 0 and at most 100%.")
@@ -45,11 +49,25 @@ def normalize_rep(row):
     return item
 
 
+def normalize_count(row):
+    item={key:int(row[key]) for key in ('session_id','active_ms','reps','bpm_samples','history_id')}
+    item['exercise']=row['exercise']
+    value=row.get('bpm_avg');item['bpm_avg']=None if value is None or not str(value).strip() else float(value)
+    bpm=item['bpm_avg']
+    if (item['session_id']<1 or item['history_id']<1 or not 0<=item['active_ms']<=4294967295 or
+        not 0<=item['reps']<=32767 or not 0<=item['bpm_samples']<=65535 or
+        (item['bpm_samples']>0 and (bpm is None or not math.isfinite(bpm) or not 40<=bpm<=180)) or
+        (item['bpm_samples']==0 and bpm is not None)):
+        raise ValueError('Invalid Part A session. Check rep counts and optional BPM data.')
+    return item
+
+
 def normalize(row):
     exercise = row.get("exercise", "")
     if exercise=="chest_press":return normalize_rep(row)
+    if exercise in COUNT_EXERCISES:return normalize_count(row)
     if exercise not in EXERCISES:
-        raise ValueError("Only wall-sit, plank and chest-press summaries can be evaluated.")
+        raise ValueError("Unsupported exercise in this session file.")
     def integer(key):
         raw = row.get(key, "")
         value = int(raw)
@@ -90,6 +108,7 @@ def load_csv(path):
 def evaluate(row, targets, minimum, rep_minimum=90):
     validate_criteria(targets, minimum, rep_minimum)
     if row['exercise']=='chest_press':return evaluate_reps(row,targets,rep_minimum)
+    if row['exercise'] in COUNT_EXERCISES:return evaluate_count(row,targets)
     if row['exercise'] not in targets:
         return dict(kind='hold',status='Cannot evaluate',missing_target=True,
                     reasons=['Set and confirm a target for this exercise.'],consistency_percent=None,
@@ -141,6 +160,15 @@ def evaluate_reps(row, targets, minimum):
     result['status']='Not good yet' if result['reasons'] else 'Good'
     if not result['reasons']:result['reasons']=['Both the good-rep count and good-rep percentage goals were met.']
     return result
+
+
+def evaluate_count(row,targets):
+    target=targets.get(row['exercise']);remaining=max(0,target-row['reps']) if target else None
+    return dict(kind='counts',status='Cannot evaluate' if target is None else 'Good' if not remaining else 'Not good yet',
+                missing_target=target is None,rep_count=row['reps'],target_reps=target,remaining_reps=remaining,
+                active_seconds=row['active_ms']/1000,bpm_avg=row['bpm_avg'],bpm_samples=row['bpm_samples'],
+                reasons=['Set and confirm a rep target for this exercise.'] if target is None else
+                        [f'{remaining:g} more reps needed.'] if remaining else ['The recorded rep count met the target.'])
 
 
 def attempt_number(rows,index):
@@ -207,7 +235,8 @@ class ResultStore:
             items.append(item)
         # New-format records have an archive generation that survives resets and
         # increases on erase. Legacy records stay in their import order, unscored.
-        return sorted(items, key=lambda r: (r["history_id"] is not None,
+        return sorted(items, key=lambda r: (list(EXERCISES).index(r["exercise"]) if r["exercise"] in EXERCISES else len(EXERCISES),
+                                            r["history_id"] is not None,
                                             r["history_id"] or 0,
                                             r["session_id"] if r["history_id"] else r["import_order"]))
     def save_criteria(self, participant, targets, minimum, rep_minimum=90):
@@ -222,6 +251,16 @@ class ResultStore:
 
 def progression(rows, current_index, targets, minimum, rep_minimum=90):
     current=rows[current_index]
+    if current['exercise'] in COUNT_EXERCISES:
+        earlier=[i for i in range(current_index) if rows[i]['exercise']==current['exercise']]
+        if not earlier or current['exercise'] not in targets:return None
+        now=evaluate(current,targets,minimum,rep_minimum)
+        previous=evaluate(rows[earlier[-1]],targets,minimum,rep_minimum)
+        first=evaluate(rows[earlier[0]],targets,minimum,rep_minimum)
+        return dict(kind='counts',previous=previous,first=first,previous_index=earlier[-1],
+                    rep_change=now['rep_count']-previous['rep_count'],first_rep_change=now['rep_count']-first['rep_count'],
+                    active_change=now['active_seconds']-previous['active_seconds'],
+                    first_active_change=now['active_seconds']-first['active_seconds'])
     if current['exercise']=='chest_press':
         now=evaluate(current,targets,minimum,rep_minimum)
         earlier=[i for i in range(current_index) if rows[i]['exercise']=='chest_press' and
