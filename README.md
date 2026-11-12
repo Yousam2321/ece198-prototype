@@ -6,6 +6,27 @@ Use this repository as the shared source for the four-person build.
 **Prototype status:** code can be compiled and logic-tested without hardware.
 Sensor readings, repetition accuracy and placement must still be tested on the real build.
 
+## Verify the station version: B2.1
+
+The OLED title must show **WALL SIT B2.1** or **PLANK B2.1**.
+Serial command `version` prints `# ECE198_B_2.1`.
+Download/extract the current repository and open the new
+`HoldStation/HoldStation.ino`, keeping its entire folder intact.
+Uploading a previously opened sketch from an older folder does not update it.
+
+For a bench check, keep a book still about 50 cm from the ultrasonic sensor.
+Hold/release MODE to calibrate, then briefly tap/release GO.
+After COUNTDOWN, RUNNING should show In band increasing in tenths of a second.
+Hold GO >=1.2 seconds and release to save and show DONE.
+One short GO from DONE resets both timers and starts a fresh countdown.
+A long GO in IDLE/COUNTDOWN/DONE cannot create/finish a session.
+The results remain visible at DONE until an explicit new attempt/mode/calibration.
+Serial button events `go_short` and `go_long` identify what the hardware detected.
+
+If B2.1 shows RUNNING with WITHIN BAND but its counter stays at zero,
+capture several DATA rows plus button events; the sample_gap_ms field helps
+distinguish intermittent samples from a session-control problem.
+
 ## Start here
 
 1. Open [the team build/test plan](docs/Team_Build_and_Test_Plan.pdf): both schematics and four task pages.
