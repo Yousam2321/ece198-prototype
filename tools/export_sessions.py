@@ -12,25 +12,35 @@ import time
 
 COLUMNS = ["session_id", "exercise", "active_ms", "in_band_ms",
            "active_seconds", "in_band_seconds", "reference_cm", "band_cm",
-           "exported_at_utc"]
+           "trailing_out_ms", "trailing_out_seconds", "adjusted_active_ms",
+           "adjusted_active_seconds", "has_hold", "history_id", "exported_at_utc"]
 
 
 def parse_saved(line):
     fields = next(csv.reader([line]))
-    if len(fields) != 7 or fields[0] != "SAVED":
+    if len(fields) not in (7, 10) or fields[0] != "SAVED":
         raise ValueError("Incomplete saved session received; retry the export.")
-    _, identifier, exercise, active, in_band, reference, band = fields
+    _, identifier, exercise, active, in_band, reference, band = fields[:7]
     identifier, active, in_band = int(identifier), int(active), int(in_band)
     reference, band = float(reference), float(band)
     if (identifier < 1 or exercise not in ("wall_sit", "plank") or
-            not 0 <= in_band <= active or
-            not math.isfinite(reference) or not math.isfinite(band) or
-            reference < 0 or band < 0):
+            not 0 <= in_band <= active or not math.isfinite(reference) or
+            not math.isfinite(band) or reference < 0 or band < 0):
         raise ValueError("Invalid saved session received; retry the export.")
-    return dict(session_id=identifier, exercise=exercise, active_ms=active,
-                in_band_ms=in_band, active_seconds=f"{active / 1000:.3f}",
-                in_band_seconds=f"{in_band / 1000:.3f}",
-                reference_cm=f"{reference:.1f}", band_cm=f"{band:.1f}")
+    row = dict(session_id=identifier, exercise=exercise, active_ms=active,
+               in_band_ms=in_band, active_seconds=f"{active / 1000:.3f}",
+               in_band_seconds=f"{in_band / 1000:.3f}", reference_cm=f"{reference:.1f}",
+               band_cm=f"{band:.1f}", trailing_out_ms="", trailing_out_seconds="",
+               adjusted_active_ms="", adjusted_active_seconds="", has_hold="", history_id="")
+    if len(fields) == 10 and any(fields[7:]):
+        tail, has_hold, generation = map(int, fields[7:])
+        if (not 0 <= tail <= active or in_band > active-tail or
+                has_hold not in (0, 1) or generation < 1):
+            raise ValueError("Invalid end-of-session metadata.")
+        row.update(trailing_out_ms=tail, trailing_out_seconds=f"{tail / 1000:.3f}",
+                   adjusted_active_ms=active-tail, adjusted_active_seconds=f"{(active-tail)/1000:.3f}",
+                   has_hold=has_hold, history_id=generation)
+    return row
 
 
 def read_history(device, timeout=10, clock=time.monotonic):

@@ -15,6 +15,7 @@ inline void delayMicroseconds(int){}
 inline uint32_t pulseIn(int,int,uint32_t){return fakePulse;}
 struct FakeSerial {
   void begin(int){}
+  void println(){}
   int available(){return 0;}
   char read(){return 0;}
   template<class T>void print(T){}
