@@ -96,3 +96,24 @@ The build used installed dependencies despite a failed network index refresh.
 - Shared-core, serial-only and OLED-enabled station tests passed. Default Uno R3
   build: 19,670 bytes flash; 1,456 bytes static RAM; 592 bytes left for runtime/stack.
 - Physical button/UI and EEPROM erase behavior still need testing on the real board.
+
+## B2.4 and Windows results app
+
+- Firmware saves final-departure active duration, whether any valid hold was seen,
+  and an archive generation. Pauses do not extend the recorded departure.
+- Base EEPROM summaries at 0..419 remain readable; new metadata at 420..739 is
+  CRC-bound to its base record. Archive generation uses alternating CRC records at
+  900..915 and increments on clear. Old summaries are preserved with unknown metadata.
+- Corrupt/missing extension data never becomes an invented zero ending duration.
+- Tests cover final departure, a middle departure followed by return, pause clocks,
+  zero holds, legacy records, corrupted extensions, interrupted writes at every
+  append boundary, and identities across erase/reboot.
+- Python tests cover exact score boundaries, time/consistency feedback, no invented
+  legacy score, SQLite reopen/deduplication/profile separation, archive generations,
+  and same-exercise/tolerance comparisons.
+- R3 SH1106 build: 21,384 bytes flash; 1,461 bytes static RAM; 587 bytes for stack/runtime.
+- Windows CI builds the executable and smoke-tests both source GUI and packaged EXE.
+  A synthetic-results GUI screenshot is produced for visual review. The GUI cannot
+  run in the local headless Linux environment, so Windows is the GUI test environment.
+- The current Python suite has 18 passing tests, plus the portable C++ station/core
+  tests in serial and OLED-stub configurations. Physical B2.4 testing remains required.

@@ -34,6 +34,14 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(len(saved),2);self.assertEqual(saved[0]['exercise'],'plank')
             self.assertTrue(saved[0]['exported_at_utc'])
             with self.assertRaises(FileExistsError): export.write_csv(path,rows)
+    def test_new_metadata(self):
+        rows=self.read([HEADER,b'SAVED,9,plank,35000,27000,50.0,10.0,5000,1,2\n',DATA])
+        self.assertEqual(rows[0]['trailing_out_ms'],5000)
+        self.assertEqual(rows[0]['adjusted_active_ms'],30000)
+        self.assertEqual(rows[0]['history_id'],2)
+    def test_old_metadata_blank(self):
+        rows=self.read([HEADER,b'SAVED,9,plank,35000,27000,50.0,10.0,,,\n',DATA])
+        self.assertEqual(rows[0]['trailing_out_ms'],'')
     def test_empty(self): self.assertEqual(self.read([HEADER,b'# No saved sessions\n']),[])
     def test_fragmented(self): self.assertEqual(len(self.read([HEADER,ROW[:10],ROW[10:],DATA])),1)
     def test_incomplete_does_not_export(self):

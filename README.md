@@ -6,6 +6,42 @@ Use this repository as the shared source for the four-person build.
 **Prototype status:** code can be compiled and logic-tested without hardware.
 Sensor readings, repetition accuracy and placement must still be tested on the real build.
 
+## Windows results app and B2.4
+
+The desktop app shows measured hold statistics, explains Good / Not good yet /
+Cannot evaluate, and keeps participant profiles and progression locally.
+Download ECE198-Results-Windows from a successful **Build Windows results app**
+run under Actions, extract it, and double-click ECE198_Results.exe.
+No Python/PowerShell is needed for the executable.
+
+- Import a CSV or read the connected Arduino (finish/save and close Serial Monitor first).
+- Choose a participant label and select only their sessions when importing.
+- Enter target durations and the required consistency. Review and confirm all rules
+  before the app evaluates anything. The editable 90% default is a prototype setting.
+- Good requires both reaching the entered in-band duration target and meeting the
+  confirmed consistency requirement. No medical targets or weighted total are imposed.
+- Corrected consistency = in-band time / (active time - final departure time) x 100.
+  Earlier excursions followed by returning in band still count against consistency.
+  Pauses are excluded. The final departure includes missing final readings; this
+  defines an observed hold endpoint, not an inferred clinical failure or success.
+- In-band time can be reduced by signal loss or delayed sampling. Uncredited time
+  is not automatically labeled bad posture. No valid credited hold is unscorable.
+- The app compares the same participant/exercise/tolerance under the current confirmed
+  criteria. It shows hold time, completion, corrected consistency and change from the
+  previous and first compatible attempts, plus a progression graph.
+- SQLite history stays in %LOCALAPPDATA%/ECE198_Results/results.sqlite3. Duplicate
+  imports are skipped; clearing the Arduino does not erase the computer's history.
+  Import time is not exercise date. Keep participant assignment and mounting consistent.
+- Export report opens a file chooser, so results can be saved in your chosen folder.
+
+Upload B2.4's complete HoldStation folder to capture the final continuous departure
+in future tests. Its base EEPROM records remain compatible with B2.3 summaries.
+Those older summaries are preserved, but their missing ending interval is unknown;
+the app shows their raw time and declines to invent a corrected consistency score.
+The app's statistics assess measured proximity to a reference, not full-body form.
+
+Source/build instructions are in [desktop/README.txt](desktop/README.txt).
+
 ## Easier updates (Windows)
 
 Clone this repository once using **GitHub Desktop**, then use **Fetch origin /
@@ -13,10 +49,10 @@ Pull origin** for later updates. Open the sketch from the cloned folder and clic
 Upload in Arduino IDE. See [the step-by-step Git workflow](docs/GIT_WORKFLOW.md).
 Fetching code alone does not change the program running on the Uno.
 
-## Verify the station version: B2.3
+## Verify the station version: B2.4
 
-The OLED title must show **WALL SIT B2.3** or **PLANK B2.3**.
-Serial command `version` prints `# ECE198_B_2.3`.
+The OLED title must show **WALL SIT B2.4** or **PLANK B2.4**.
+Serial command `version` prints `# ECE198_B_2.4`.
 Download/extract the current repository and open the new
 `HoldStation/HoldStation.ino`, keeping its entire folder intact.
 Uploading a previously opened sketch from an older folder does not update it.
@@ -111,7 +147,7 @@ The opening hold and its release cannot confirm deletion. A short two-button hol
 is ignored. The erase menu is unavailable during RUNNING, PAUSED, COUNTDOWN or
 calibration. Erasing resets the session to IDLE while retaining calibration and
 tolerance. CSV exports on your computer are untouched. The archive's EEPROM bytes
-0..419 are cleared; session IDs restart at 1. Export files from before/after an erase
+0..739 are cleared; session IDs restart at 1 and the archive generation increases. Export files from before/after an erase
 are separate histories, so IDs alone must not be treated as globally unique.
 Erasing is not atomic across a power cut; keep power connected until confirmation.
 Use the next ordinary GO/MODE action to leave the confirmation/result display.
@@ -123,8 +159,8 @@ session by holding GO >=1.2 seconds and releasing it, or sending `finish`.
 Send `history` in Serial Monitor at 115200 baud with Newline to read saved results.
 The latest 20 summaries survive power cycles in the Uno R3 EEPROM; new saves
 replace the oldest. Running sessions are not recovered after power loss. Each
-summary stores session ID, exercise, active/in-band milliseconds, reference and
-band tolerance. No calendar date is available without a real-time clock.
+summary stores session ID, exercise, active/in-band milliseconds, reference,
+band tolerance and (B2.4 onward) final-departure metadata. No calendar date is available without a real-time clock.
 
 One short GO from DONE clears session timers and starts another three-second
 countdown, retaining calibration. Long GO while IDLE/COUNTDOWN/DONE is ignored.

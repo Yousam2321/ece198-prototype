@@ -13,7 +13,7 @@
 #include <EEPROM.h>
 #include "SavedSessions.h"
 #include "HoldTiming.h"
-#define STATION_VERSION "2.3"
+#define STATION_VERSION "2.4"
 #if ENABLE_OLED
 #include <Wire.h>
 #include <U8x8lib.h>
@@ -54,6 +54,7 @@ void emit(const char* type,const __FlashStringHelper* note) {
   Serial.print(',');Serial.print(inside?1:0);
   Serial.print(',');Serial.print(rangeTimer.total);
   Serial.print(',');Serial.print(rangeTimer.gapMs);
+  Serial.print(',');Serial.print(rangeTimer.trailingMs(session.active));
   Serial.print(',');Serial.println(note);
 }
 void resetSession() {
@@ -120,6 +121,8 @@ void measureDistance(uint32_t now) {
     rangeTimer.clear();
     emit("EVENT",calibrated?F("reference_distance_saved"):F("calibration_failed_reposition"));
   }
+  if(session.state==RUNNING)session.tick(measuredAt); // Active clock excludes pauses.
+  rangeTimer.notePosition(session.active,session.state==RUNNING,distanceValid,inside);
   rangeTimer.update(measuredAt,session.state==RUNNING,distanceValid,inside);
 }
 void go() {
@@ -137,13 +140,17 @@ void printSaved(const SavedSession& r) {
   Serial.print(r.exercise?F("plank"):F("wall_sit"));Serial.print(',');
   Serial.print(r.activeMs);Serial.print(',');Serial.print(r.inBandMs);Serial.print(',');
   Serial.print(r.referenceMm/10.0f,1);Serial.print(',');
-  Serial.println(r.toleranceMm/10.0f,1);
+  Serial.print(r.toleranceMm/10.0f,1);Serial.print(',');
+  if(r.tailKnown)Serial.print(r.trailingMs);
+  Serial.print(',');if(r.tailKnown)Serial.print(r.hasHold?1:0);
+  Serial.print(',');if(r.tailKnown)Serial.print(r.historyId);
+  Serial.println();
 }
 void showHistory() {
   if(session.state==RUNNING || session.state==COUNTDOWN){
     emit("EVENT",F("pause_before_history"));return;
   }
-  Serial.println(F("# SAVED,id,exercise,active_ms,in_band_ms,reference_cm,band_cm"));
+  Serial.println(F("# SAVED,id,exercise,active_ms,in_band_ms,reference_cm,band_cm,trailing_out_ms,has_hold,history_id"));
   uint32_t latest=archive.latestId();
   if(!latest){Serial.println(F("# No saved sessions"));return;}
   uint32_t first=latest>20?latest-19:1;
@@ -157,7 +164,8 @@ void finishSession() {
   if(session.state!=RUNNING && session.state!=PAUSED)return;
   session.finish(millis());rangeTimer.breakContinuity();
   SavedSession r={0,session.active,rangeTimer.total,
-    uint16_t(targetCm*10+0.5f),uint16_t(toleranceCm*10+0.5f),profile};
+    uint16_t(targetCm*10+0.5f),uint16_t(toleranceCm*10+0.5f),profile,
+    rangeTimer.trailingMs(session.active),0,true,rangeTimer.sawInside};
   bool saved=archive.append(r);
   lastSaveSucceeded=saved;finalResultShown=false;
   emit("SUMMARY",saved?F("saved_to_eeprom"):F("save_failed"));
@@ -292,7 +300,7 @@ void setup() {
 #endif
   session.reset(millis());
   Serial.println(F("# ECE198_B_" STATION_VERSION));
-  Serial.println(F("type,device,uptime_ms,exercise,state,active_ms,distance_cm,reference_cm,band_cm,echo_valid,inside_band,range_ms,sample_gap_ms,note"));
+  Serial.println(F("type,device,uptime_ms,exercise,state,active_ms,distance_cm,reference_cm,band_cm,echo_valid,inside_band,range_ms,sample_gap_ms,trailing_out_ms,note"));
   emit("EVENT",F("boot_type_help_for_commands"));
 }
 // Keep timing, buttons and sensor processing responsive; do not add long delays.

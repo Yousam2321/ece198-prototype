@@ -65,13 +65,13 @@ int main(){
   // Ring capacity and chronological IDs; old entries overwritten, newest retained.
   EEPROMClass memory;SessionArchive<EEPROMClass> log(memory);
   assert(log.latestId()==0);
-  for(int i=1;i<=25;++i){SavedSession a={0,1000,500,439,100,1};assert(log.append(a));assert(a.id==uint32_t(i));}
+  for(int i=1;i<=25;++i){SavedSession a={0,1000,500,439,100,1,0,0,false,false};assert(log.append(a));assert(a.id==uint32_t(i));}
   assert(!log.readId(5,r));assert(log.readId(6,r));assert(log.readId(25,r));
   // Interrupted writes never return a partially written record as valid.
   for(int cut=0;cut<22;++cut){
     EEPROMClass interrupted=memory;interrupted.writes=0;interrupted.failAfter=cut;
     SessionArchive<EEPROMClass> trial(interrupted);
-    SavedSession a={0,1000,500,439,100,0};
+    SavedSession a={0,1000,500,439,100,0,0,0,false,false};
     try{trial.append(a);}catch(int){}
     assert(!trial.readId(26,r));assert(trial.readId(25,r));
   }
@@ -143,7 +143,7 @@ int main(){
   updateDisplay();assert(strstr(fakeScreen[0],"HISTORY CLEARED"));
 #endif
   SessionArchive<EEPROMClass> afterErase(EEPROM);assert(afterErase.latestId()==0);
-  SavedSession fresh={0,1000,500,500,100,0};assert(archive.append(fresh) && fresh.id==1);
+  SavedSession fresh={0,1000,500,500,100,0,0,0,false,false};assert(archive.append(fresh) && fresh.id==1);
   // Both buttons during a running session must not erase, finish or calibrate.
   go();advance(3100);assert(session.state==RUNNING);
   bothButtons(3200);assert(!erasePrompt && session.state==RUNNING && archive.latestId()==1);
@@ -151,7 +151,56 @@ int main(){
   bothButtons(3200);assert(erasePrompt && session.state==DONE);
   pressGo(200);assert(eraseResult==1 && archive.latestId()==0 && session.state==IDLE);
   // Erase touches archive bytes only.
-  memory.bytes[900]=0x5A;assert(log.clear());assert(memory.bytes[900]==0x5A);
-  for(int i=0;i<420;++i)assert(memory.bytes[i]==0);
+  memory.bytes[990]=0x5A;assert(log.clear());assert(memory.bytes[990]==0x5A);
+  for(int i=0;i<740;++i)assert(memory.bytes[i]==0);
+  // Full-loop capture: leave the target at the end, then reach GO later.
+  resetSession();profile=0;calibrated=true;targetCm=50;toleranceCm=10;fakePulse=2915;
+  go();advance(3100);advance(5000);
+  uint32_t beforeExit=rangeTimer.total;assert(beforeExit>4800);
+  fakePulse=6000;advance(5000);finishSession();
+  SavedSession ended;assert(archive.readId(archive.latestId(),ended));
+  assert(ended.tailKnown && ended.hasHold && ended.trailingMs>4700);
+  assert(ended.inBandMs<=ended.activeMs-ended.trailingMs);
+  assert(ended.activeMs-ended.trailingMs<6000);
+  // A later return in band means the earlier excursion remains in the denominator.
+  resetSession();fakePulse=2915;go();advance(3100);advance(3000);
+  fakePulse=6000;advance(2000);fakePulse=2915;advance(3000);
+  fakePulse=6000;advance(2000);finishSession();
+  assert(archive.readId(archive.latestId(),ended));
+  assert(ended.trailingMs>1700 && ended.trailingMs<2200);
+  assert(ended.activeMs-ended.trailingMs-ended.inBandMs>1500);
+  // B2.4: exclude only the last departure; earlier out-of-band gaps stay assessed.
+  HoldTiming ending;
+  ending.notePosition(1000,true,true,true);
+  ending.notePosition(2000,true,true,false); // Middle departure.
+  ending.notePosition(3000,true,true,true);  // Return in band clears the earlier tail.
+  ending.notePosition(4000,true,true,false);
+  assert(ending.trailingMs(6000)==3000);
+  ending.notePosition(6000,false,true,true); // Paused samples cannot move the endpoint.
+  assert(ending.trailingMs(6000)==3000);
+  ending.clear();assert(!ending.sawInside && ending.trailingMs(5000)==0);
+
+  EEPROMClass migratedMemory;SessionArchive<EEPROMClass> migrated(migratedMemory);
+  SavedSession legacy={0,1000,500,500,100,0,0,0,false,false};
+  assert(migrated.append(legacy));assert(migrated.readId(1,r) && !r.tailKnown);
+  SavedSession modern={0,35000,27000,500,100,1,5000,0,true,true};
+  assert(migrated.append(modern));assert(migrated.readId(2,r));
+  assert(r.tailKnown && r.trailingMs==5000 && r.historyId==1 && r.hasHold);
+  assert(migrated.readId(1,r) && !r.tailKnown); // Older summaries still readable.
+  EEPROMClass safe=migratedMemory;SessionArchive<EEPROMClass> safeLog(safe);
+  int startWrites=safe.writes;SavedSession newer=modern;assert(safeLog.append(newer));
+  int writeCount=safe.writes-startWrites;
+  for(int cut=0;cut<writeCount;++cut){
+    EEPROMClass powerCut=migratedMemory;powerCut.writes=0;powerCut.failAfter=cut;
+    SessionArchive<EEPROMClass> partial(powerCut);SavedSession a=modern;
+    try{partial.append(a);}catch(int){}
+    assert(!partial.readId(3,r));assert(partial.readId(2,r) && r.tailKnown);
+  }
+  migratedMemory.bytes[420+16+6]^=1; // Damaged extension retains base, marks metadata unknown.
+  assert(migrated.readId(2,r) && !r.tailKnown);
+  assert(migrated.clear());assert(migrated.historyId()==2);
+  modern.id=0;assert(migrated.append(modern) && modern.id==1 && modern.historyId==2);
+  SessionArchive<EEPROMClass> sameAfterPower(migratedMemory);
+  assert(sameAfterPower.readId(1,r) && r.tailKnown && r.historyId==2);
   std::cout<<"Station restart, button, timing and EEPROM tests passed\n";
 }
