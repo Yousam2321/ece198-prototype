@@ -45,6 +45,13 @@ public:
   bool readId(uint32_t id,SavedSession& r){
     return id && readSlot(uint8_t((id-1)%CAPACITY),r) && r.id==id;
   }
+  // Erase only this archive's EEPROM range.
+  bool clear(){
+    if(memory.length()<CAPACITY*RECORD_BYTES)return false;
+    for(int i=0;i<CAPACITY*RECORD_BYTES;++i)memory.update(i,0);
+    for(int i=0;i<CAPACITY*RECORD_BYTES;++i)if(memory.read(i)!=0)return false;
+    return true;
+  }
   bool append(SavedSession& r){
     uint32_t last=latestId();
     if(last==UINT32_MAX || memory.length()<CAPACITY*RECORD_BYTES)return false;
