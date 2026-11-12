@@ -1,7 +1,7 @@
 # Chest press - Solution B B2.6
 
 Same Uno R3, HC-SR04, OLED and two buttons. No new wiring or parts.
-The desktop app and LED behaviour have not been extended in this update.
+The updated desktop app supports chest press. The LED extension is still deferred.
 
 ## Install
 
@@ -75,8 +75,8 @@ Chest records retain active time, good/attempt counts, both calibrated distances
 last completed travel and archive generation. Saves survive a power cycle.
 An interrupted save is not reported as a valid record.
 
-The existing app still imports/evaluates **wall sit and plank only**. Its protocol
-is unchanged. Chest-press app support is deferred. For a technical inspection,
+The updated app imports/evaluates all three exercises and reads both archives.
+It also opens raw chest-press CSVs. For a technical inspection,
 Serial Monitor at **115200**, New Line:
 
 - `chest` selects chest press; `cal`, `go`, `finish` match the buttons.
@@ -134,11 +134,11 @@ Close Serial Monitor and the app. From the **project root** (the folder containi
 `tools`, not inside `HoldStation`), run:
 
 ```powershell
-python tools/export_sessions.py --port COM10 --reps --output ".\saved_sessions\chest_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
+python tools/export_sessions.py --port COM10 --reps --output ".\saved_sessions\saved_sessions_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
 ```
 
 The CSV includes good/attempt counts, short attempts, good-rep percentage, active
 time, reference positions, travel thresholds and the last completed travel.
 Zero attempts gives a blank percentage. Export does not erase board history.
 Omit `--reps` to export wall-sit/plank records using the existing format. These raw
-chest CSVs are for Excel; chest-press scoring in the app is still deferred.
+chest CSVs open in Excel or the updated Exercise Results app.

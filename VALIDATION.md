@@ -158,3 +158,20 @@ decline, pause/resume, ignored long GO while confirming, fresh start and normal
 finish/save afterward. Byte-for-byte EEPROM comparisons verify cancellation does
 not change either archive. OLED tests check confirmation and NOT SAVED screens.
 Uno builds cover both OLED drivers and Serial-only. Physical testing remains.
+
+
+## Desktop chest integration
+
+- Python tests cover raw chest import, scoring boundaries and both failure reasons,
+  no completed attempts, malformed data, allowed travel overshoot, changed travel,
+  both archive protocols, old-firmware fallback, duplicate IDs across archives,
+  existing profile reopening, assessed-CSV round trips and mixed/zero-attempt PDFs.
+- Existing hold/profile/report/parser tests remain in the suite.
+- The user's two-session CSV was checked locally: both import as 9/12 and 75%.
+  User files are not uploaded to the public repository or build artifacts.
+- A synthetic six-page mixed PDF was rendered and reviewed, including chest
+  summaries, graphs, history and calibration differences.
+- Windows CI checks source and packaged GUI paths: legacy profile, chest imports,
+  specific scores, preview, graphs, PDF/CSV export, deletion and hold regression.
+- Firmware and LED behaviour are unchanged. Physical board reading remains a
+  user-side integration check; serial tests use deterministic protocol fixtures.
