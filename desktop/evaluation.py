@@ -106,9 +106,27 @@ class ResultStore:
         self.db.execute("CREATE TABLE IF NOT EXISTS sessions (participant TEXT, key TEXT, imported TEXT, payload TEXT, PRIMARY KEY(participant,key))")
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (participant TEXT PRIMARY KEY, payload TEXT)")
         self.db.commit()
-    def participants(self):
-        rows = self.db.execute("SELECT participant FROM sessions UNION SELECT participant FROM settings ORDER BY participant").fetchall()
-        return [r[0] for r in rows]
+    def participants(self, limit=100):
+        return [r["participant"] for r in self.participant_summaries(limit=limit)]
+    def participant_summaries(self, query="", limit=100):
+        # Bound the picker/manager list even with thousands of profiles.
+        pattern="%"+query.strip().replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%"
+        rows=self.db.execute("""WITH people AS (
+            SELECT participant FROM sessions UNION SELECT participant FROM settings
+        ), totals AS (SELECT participant,COUNT(*) AS attempts FROM sessions GROUP BY participant)
+        SELECT p.participant,COALESCE(t.attempts,0) FROM people p
+        LEFT JOIN totals t ON p.participant=t.participant
+        WHERE p.participant LIKE ? ESCAPE '\\'
+        ORDER BY p.participant COLLATE NOCASE LIMIT ?""",(pattern,max(1,min(int(limit),1000)))).fetchall()
+        return [dict(participant=name,attempts=count) for name,count in rows]
+    def participant_count(self):
+        return self.db.execute("SELECT COUNT(*) FROM (SELECT participant FROM sessions UNION SELECT participant FROM settings)").fetchone()[0]
+    def delete_participant(self, participant):
+        if not participant.strip(): raise ValueError("Select a participant first.")
+        with self.db:
+            count=self.db.execute("DELETE FROM sessions WHERE participant=?",(participant,)).rowcount
+            self.db.execute("DELETE FROM settings WHERE participant=?",(participant,))
+        return count
     def add(self, participant, rows):
         if not participant.strip(): raise ValueError("Enter a participant label.")
         count = 0

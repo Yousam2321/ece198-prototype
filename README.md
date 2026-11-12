@@ -237,3 +237,13 @@ See [GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) for cloning, branches and reviews.
 
 No open-source license has been chosen on the team's behalf. Third-party libraries are
 installed separately through Arduino IDE and retain their own licenses.
+
+
+### Readable reports and participant management
+
+The Windows results app has 7/10 visible attempt rows, specific time/consistency
+reasons, a compact selected-attempt summary, and **Clean report (PDF)** with graphs
+and progression. **Export CSV** remains available. **Manage participants** searches
+labels and deletes an entire local profile (criteria and attempts) after confirmation;
+it does not alter exported files or Arduino records. This update needs no Arduino
+upload. See `desktop/README.txt` for the app instructions.

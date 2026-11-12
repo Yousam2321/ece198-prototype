@@ -117,3 +117,16 @@ The build used installed dependencies despite a failed network index refresh.
   run in the local headless Linux environment, so Windows is the GUI test environment.
 - The current Python suite has 18 passing tests, plus the portable C++ station/core
   tests in serial and OLED-stub configurations. Physical B2.4 testing remains required.
+
+
+## Desktop usability update (app only)
+
+- Python evaluator, parser, report and profile tests: 22 passed locally.
+- Includes complete profile deletion and reopening the database, literal search
+  characters, a bounded list across 10,000 profiles, all failure-reason labels,
+  multi-exercise/tolerance PDF generation, continuation pages and overwrite refusal.
+- Rendered and visually reviewed an eight-page synthetic PDF (no participant data).
+- Windows workflow checks the source GUI and packaged executable: 7/10-row list,
+  selected exercise/attempt, specific failure reasons, PDF creation, participant
+  manager, complete deletion of synthetic profiles and existing progression view.
+- Arduino firmware and hold-evaluation mathematics are unchanged.
