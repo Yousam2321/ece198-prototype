@@ -38,7 +38,7 @@ jobs:
           arduino-cli core install arduino:avr@1.8.8
           arduino-cli core install arduino:renesas_uno@1.6.0
           arduino-cli lib update-index
-          arduino-cli lib install U8g2@2.37.1 LiquidCrystal@1.0.7 "SparkFun MAX3010x Pulse and Proximity Sensor Library@1.1.2"
+          arduino-cli lib install U8g2 LiquidCrystal@1.0.7 "SparkFun MAX3010x Pulse and Proximity Sensor Library@1.1.2"
       - name: Compile original-based Part A for Uno R3
         run: arduino-cli compile --fqbn arduino:avr:uno --build-path build/parta-r3 PartA
       - name: Compile original-based Part A for Uno R4 Minima

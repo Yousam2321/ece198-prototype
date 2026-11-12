@@ -542,12 +542,15 @@ def smoke_test():
             app.show_progress();root.after(150);root.update()
             for w in root.winfo_children():
                 if isinstance(w,tk.Toplevel):w.destroy()
-        app.review_criteria();root.update()
+        # A transient dialog follows the parent window's mapped state. Show
+        # the parent before checking that the confirmation controls are visible.
+        root.deiconify();root.update();app.review_criteria();root.update()
         review=next(w for w in root.winfo_children() if isinstance(w,tk.Toplevel))
         assert review.title()=='Confirm evaluation criteria'
         buttons=[w for body in review.winfo_children() for w in body.winfo_children() if isinstance(w,ttk.Button)]
         assert any(w.cget('text')=='Confirm and evaluate' and w.winfo_ismapped() for w in buttons)
-        review.destroy()
+        next(w for w in buttons if w.cget('text')=='Confirm and evaluate').invoke();root.update()
+        assert app.confirmed and not review.winfo_exists()
         report=Path('clean_report_preview.pdf') if os.environ.get('ECE198_CAPTURE_PREVIEW') else Path(directory)/'report.pdf'
         if report.exists():report.unlink()  # Synthetic output only.
         build_report(report,'Participant 1',app.rows,*app.criteria())
