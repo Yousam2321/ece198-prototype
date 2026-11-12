@@ -65,6 +65,23 @@ class ChestAppTests(unittest.TestCase):
         rows,notice=read_all_history(p,timeout=2,clock=p.clock);self.assertEqual(len(rows),1);self.assertIn('Older',notice)
         p=Port([header,hold,b'# END_HISTORY\n',rep_header,raw])
         with self.assertRaises(TimeoutError):read_all_history(p,timeout=2,clock=p.clock)
+    def test_delete_exact_row_keeps_profile_criteria_and_other_archives(self):
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'history.sqlite3';store=e.ResultStore(path)
+            for person in ('A','B'):store.add(person,[row(),rep()])
+            store.save_criteria('A',TARGETS,90,75)
+            selected=next(r for r in store.load('A') if r['exercise']=='chest_press')
+            self.assertEqual(store.delete_row('A',selected),1)
+            self.assertEqual(store.delete_row('A',selected),0)
+            self.assertEqual(len(store.load('A')),1);self.assertEqual(len(store.load('B')),2)
+            self.assertEqual(store.criteria('A')['rep_minimum'],75)
+            store.close();store=e.ResultStore(path)
+            self.assertEqual(store.load('A')[0]['exercise'],'wall_sit')
+            store.add('No goals',[rep()]);store.delete_row('No goals',store.load('No goals')[0])
+            self.assertIn('No goals',store.participants());self.assertEqual(store.load('No goals'),[])
+            # Source records remain importable; deletion is local, not a blacklist.
+            self.assertEqual(store.add('A',[rep()]),1);store.close()
+
     def test_mixed_and_chest_only_pdf(self):
         with tempfile.TemporaryDirectory() as d:
             for name,rows,targets in [('mixed',[row(),rep(),rep(2,end=54.9)],TARGETS),

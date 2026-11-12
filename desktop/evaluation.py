@@ -180,6 +180,16 @@ class ResultStore:
             count=self.db.execute("DELETE FROM sessions WHERE participant=?",(participant,)).rowcount
             self.db.execute("DELETE FROM settings WHERE participant=?",(participant,))
         return count
+    def delete_row(self, participant, row):
+        # Use the exact persisted key, not the displayed row number. Board IDs
+        # can overlap between the hold/rep archives and between participants.
+        key=row.get('_record_key') or record_key(normalize(row))
+        with self.db:
+            count=self.db.execute('DELETE FROM sessions WHERE participant=? AND key=?',(participant,key)).rowcount
+            if count:
+                # A profile with no criteria must survive deletion of its last row.
+                self.db.execute('INSERT OR IGNORE INTO settings VALUES (?,?)',(participant,'{}'))
+        return count
     def add(self, participant, rows):
         if not participant.strip(): raise ValueError("Enter a participant label.")
         count = 0
@@ -190,10 +200,10 @@ class ResultStore:
                 count += cur.rowcount
         return count
     def load(self, participant):
-        rows = self.db.execute("SELECT imported,payload FROM sessions WHERE participant=? ORDER BY rowid", (participant,)).fetchall()
+        rows = self.db.execute("SELECT key,imported,payload FROM sessions WHERE participant=? ORDER BY rowid", (participant,)).fetchall()
         items=[]
-        for index, (imported,payload) in enumerate(rows):
-            item=json.loads(payload);item["imported_at_utc"]=imported;item["import_order"]=index
+        for index, (key,imported,payload) in enumerate(rows):
+            item=json.loads(payload);item["_record_key"]=key;item["imported_at_utc"]=imported;item["import_order"]=index
             items.append(item)
         # New-format records have an archive generation that survives resets and
         # increases on erase. Legacy records stay in their import order, unscored.
