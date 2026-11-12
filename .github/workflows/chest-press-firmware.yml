@@ -28,7 +28,8 @@ jobs:
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr@1.8.8
-          arduino-cli lib install U8g2@2.37.1
+          arduino-cli lib update-index
+          arduino-cli lib install U8g2
       - name: Compile Uno with SH1106 OLED
         run: arduino-cli compile --fqbn arduino:avr:uno --build-path build/sh1106 HoldStation
       - name: Compile Uno with SSD1306 OLED
