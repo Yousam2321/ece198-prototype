@@ -252,7 +252,8 @@ bool handleCancelButtons(uint32_t now,ButtonEvent a,ButtonEvent b){
     }
     return true;
   }
-  if(session.state==PAUSED && b==LONG_PRESS && a==NO_PRESS && !goButton.stable){
+  if(session.state==PAUSED && !eraseChordActive && !erasePrompt &&
+     b==LONG_PRESS && a==NO_PRESS && !goButton.stable){
     if(uint32_t(now-modeButton.downAt)>=2000){
       cancelPrompt=true;emit("EVENT",F("cancel_session_prompt"));
     }else emit("EVENT",F("hold_mode_2s_to_cancel"));

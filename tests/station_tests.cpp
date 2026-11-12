@@ -292,6 +292,10 @@ int main(){
     uint32_t heldActive=session.active,heldBand=rangeTimer.total;
     reps.good=2;reps.attempts=3;
     uint8_t savedBytes[1024];memcpy(savedBytes,EEPROM.bytes,1024);
+    // Both-buttons gesture must not become cancel when released separately.
+    fakePins[GO_PIN]=LOW;fakePins[MODE_PIN]=LOW;advance(2200);
+    fakePins[GO_PIN]=HIGH;advance(60);fakePins[MODE_PIN]=HIGH;advance(60);
+    assert(!cancelPrompt && session.state==PAUSED);
     holdMode(1500);assert(!cancelPrompt && session.state==PAUSED);
     holdMode(2200);assert(cancelPrompt && session.state==PAUSED);
 #if ENABLE_OLED
