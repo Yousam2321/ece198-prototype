@@ -127,6 +127,7 @@ class ResultsApp:
         ttk.Button(foot,text="View progression",command=self.show_progress).pack(side="left")
         ttk.Button(foot,text="Clean report (PDF)",command=self.export_clean_report).pack(side="left",padx=8)
         ttk.Button(foot,text="Export evaluated CSV",command=self.export_report).pack(side="left")
+        ttk.Button(foot,text="Delete selected row",command=self.delete_selected_row).pack(side="left",padx=8)
         self.status=tk.StringVar(value="Ready. Local history is kept on this computer; use participant labels to keep people separate.")
         ttk.Label(outer,textvariable=self.status,wraplength=1000).pack(anchor="w",pady=(9,0))
         ttk.Label(outer,text="This evaluates measured proximity and duration, not full exercise form. Import time is not the session date.",foreground="#526578",wraplength=1000).pack(anchor="w",pady=(4,0))
@@ -301,6 +302,20 @@ class ResultsApp:
         self.feedback.set(short_feedback(r,threshold))
         change=progression(self.rows,index,targets,minimum,rep_minimum)
         self.progress_text.set(progress_summary(self.rows,index,change))
+
+    def delete_selected_row(self):
+        index=self.selected_index()
+        if index is None:
+            messagebox.showinfo('Select a row','Select the data row you want to delete.',parent=self.root);return
+        participant=self.person.get().strip();row=self.rows[index]
+        label=f"{EXERCISES[row['exercise']]} - Session {attempt_number(self.rows,index)}"
+        if not messagebox.askyesno('Delete selected row?',
+                f"Delete {label} from {participant}?\n\nOnly this row is removed from the app. Your participant, criteria and other rows are kept.\nArduino records and CSV files stay unchanged. Re-importing the source can add this row back.",
+                parent=self.root,default='no'):return
+        count=self.store.delete_row(participant,row)
+        self.rows=self.store.load(participant);self.refresh_table()
+        self.people.configure(values=self.store.participants())
+        self.status.set('Selected row deleted. Participant and other data kept; importing the source can restore the row.' if count else 'That row was already removed.')
 
     def delete_profile(self, name):
         """Delete the complete local profile. The caller owns user confirmation."""
@@ -495,6 +510,19 @@ def smoke_test():
             from PIL import ImageGrab
             x,y=root.winfo_rootx(),root.winfo_rooty()
             ImageGrab.grab(bbox=(x,y,x+root.winfo_width(),y+root.winfo_height())).save('app_preview.png')
+        # Exercise the real row-deletion handler: decline leaves data intact;
+        # confirmation removes just the selected row and preserves criteria.
+        before=len(app.rows);key=app.rows[app.selected_index()]['_record_key']
+        old_ask=messagebox.askyesno
+        try:
+            messagebox.askyesno=lambda *args,**kwargs:False
+            app.delete_selected_row();assert len(app.rows)==before
+            messagebox.askyesno=lambda *args,**kwargs:True
+            app.delete_selected_row();root.update()
+        finally:messagebox.askyesno=old_ask
+        assert len(app.rows)==before-1 and all(r['_record_key']!=key for r in app.rows)
+        assert app.store.criteria('Participant 1')['targets']['chest_press']==10
+        assert 'Participant 1' in app.store.participants()
         # Regression: hold selection, scoring and graph still work.
         index=next(i for i,r in enumerate(app.rows) if r['exercise']=='wall_sit' and r['session_id']==9)
         app.table.selection_set(str(index));app.show_selected();root.update()

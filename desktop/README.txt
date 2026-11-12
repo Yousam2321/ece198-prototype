@@ -55,3 +55,9 @@ those goals to 10 and 90% gives Not good yet - rep count + good-rep %.
 Source dependencies: python -m pip install pyserial==3.5 reportlab==4.4.9
 Source: python desktop/results_app.py
 Windows build: desktop/build_windows.cmd
+
+Delete one data row: select it in the table, click Delete selected row, then
+confirm. This removes only that row from this participant's app history. The
+participant and criteria remain, including when the last row is deleted. Reports
+and comparisons use the remaining rows. Arduino saves and existing files are not
+changed. Re-importing a source that contains the row can add it again.
