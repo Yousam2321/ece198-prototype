@@ -33,8 +33,10 @@ class ResultsApp:
         self.jobs = queue.Queue()
         self.busy = False
         root.title("ECE198 — Hold Results")
-        root.geometry("1080x800")
-        root.minsize(980, 700)
+        width=min(1080,root.winfo_screenwidth()-60)
+        height=min(850,root.winfo_screenheight()-100)
+        root.geometry(f"{width}x{height}+20+20")
+        root.minsize(860, 560)
         root.configure(bg="#f3f6fb")
         style=ttk.Style(root)
         style.theme_use("clam")
@@ -46,7 +48,17 @@ class ResultsApp:
         style.configure("TButton", padding=(10, 7))
         style.configure("Treeview", rowheight=29, font=("Segoe UI", 10))
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
-        outer=ttk.Frame(root, padding=18);outer.pack(fill="both", expand=True)
+        style.configure("TLabelframe",background="#f3f6fb")
+        style.configure("TLabelframe.Label",background="#f3f6fb",foreground="#17283d")
+        viewport=tk.Canvas(root,bg="#f3f6fb",highlightthickness=0)
+        main_scroll=ttk.Scrollbar(root,orient="vertical",command=viewport.yview)
+        main_scroll.pack(side="right",fill="y");viewport.pack(side="left",fill="both",expand=True)
+        viewport.configure(yscrollcommand=main_scroll.set)
+        outer=ttk.Frame(viewport,padding=14)
+        window=viewport.create_window((0,0),window=outer,anchor="nw")
+        outer.bind("<Configure>",lambda event:viewport.configure(scrollregion=viewport.bbox("all")))
+        viewport.bind("<Configure>",lambda event:viewport.itemconfigure(window,width=event.width))
+        root.bind("<MouseWheel>",lambda event:viewport.yview_scroll(int(-event.delta/120),"units"))
         ttk.Label(outer, text="Hold results", style="Title.TLabel").pack(anchor="w")
         ttk.Label(outer, text="Measured duration, consistency and progress — wall sit / plank").pack(anchor="w", pady=(1,12))
         top=ttk.Frame(outer);top.pack(fill="x")
@@ -71,7 +83,7 @@ class ResultsApp:
         ttk.Label(outer,text="2. Select an attempt",style="Heading.TLabel").pack(anchor="w")
         table=ttk.Frame(outer);table.pack(fill="both",expand=True,pady=(7,10))
         columns=("attempt","exercise","hold","assessed","consistency","result")
-        self.table=ttk.Treeview(table,columns=columns,show="headings",height=7,selectmode="browse")
+        self.table=ttk.Treeview(table,columns=columns,show="headings",height=3,selectmode="browse")
         for key,title,width in zip(columns,("Session / history","Exercise","In band","Assessed time","Consistency","Result"),(150,120,110,120,120,165)):
             self.table.heading(key,text=title);self.table.column(key,width=width,anchor="w")
         self.table.pack(side="left",fill="both",expand=True)
@@ -87,7 +99,7 @@ class ResultsApp:
         ttk.Label(detail,textvariable=self.feedback,wraplength=980,justify="left").pack(anchor="w")
         self.progress_text=tk.StringVar(value="Progress will compare the same exercise and tolerance under your confirmed criteria.")
         ttk.Label(detail,textvariable=self.progress_text,wraplength=980,justify="left",style="Heading.TLabel").pack(anchor="w",pady=(10,0))
-        foot=ttk.Frame(outer);foot.pack(fill="x",pady=(10,0))
+        foot=ttk.Frame(outer);foot.pack(before=detail,fill="x",pady=(0,10))
         ttk.Button(foot,text="View progression",command=self.show_progress).pack(side="left")
         ttk.Button(foot,text="Export report",command=self.export_report).pack(side="left",padx=8)
         self.status=tk.StringVar(value="Ready. Local history is kept on this computer; use participant labels to keep people separate.")
@@ -137,17 +149,21 @@ class ResultsApp:
         except (ValueError,TypeError) as error:
             messagebox.showerror("Check criteria",str(error),parent=self.root);return
         dialog=tk.Toplevel(self.root);dialog.title("Confirm evaluation criteria");dialog.transient(self.root)
-        dialog.geometry("720x390");dialog.grab_set()
+        dialog.geometry("760x520");dialog.grab_set()
         ttk.Label(dialog,text="Please confirm before evaluating",style="Heading.TLabel").pack(anchor="w",padx=18,pady=14)
         ttk.Label(dialog,text=criteria_text(targets,minimum),wraplength=680,justify="left").pack(anchor="w",padx=18)
         buttons=ttk.Frame(dialog,padding=18);buttons.pack(side="bottom",fill="x")
         ttk.Button(buttons,text="Back",command=dialog.destroy).pack(side="left")
         def confirm():
-            self.store.save_criteria(self.person.get().strip(),targets,minimum)
-            self.confirmed=True
-            self.criteria_note.set(f"Confirmed: wall sit {targets['wall_sit']:g}s; plank {targets['plank']:g}s; consistency ≥{minimum:g}%.")
-            dialog.destroy();self.refresh_table()
+            self.accept_criteria(targets,minimum)
+            dialog.destroy()
         ttk.Button(buttons,text="Confirm and evaluate",command=confirm).pack(side="right")
+
+    def accept_criteria(self,targets,minimum):
+        self.store.save_criteria(self.person.get().strip(),targets,minimum)
+        self.confirmed=True
+        self.criteria_note.set(f"Confirmed: wall sit {targets['wall_sit']:g}s; plank {targets['plank']:g}s; consistency ≥{minimum:g}%.")
+        self.refresh_table()
 
     def open_csv(self):
         path=filedialog.askopenfilename(title="Open saved sessions",filetypes=[("CSV results","*.csv")])
@@ -160,10 +176,13 @@ class ResultsApp:
         if not self.person.get().strip():messagebox.showerror("Participant","Enter a participant label first.",parent=self.root);return
         dialog=tk.Toplevel(self.root);dialog.title("Choose sessions to keep");dialog.geometry("850x440");dialog.transient(self.root);dialog.grab_set()
         ttk.Label(dialog,text=f"Keep only {self.person.get().strip()}'s sessions selected. Ctrl-click to select/deselect.",wraplength=800).pack(anchor="w",padx=14,pady=14)
-        tree=ttk.Treeview(dialog,columns=("id","exercise","active","hold","tail","band"),show="headings",selectmode="extended")
+        preview=ttk.Frame(dialog);preview.pack(fill="both",expand=True,padx=14)
+        tree=ttk.Treeview(preview,columns=("id","exercise","active","hold","tail","band"),show="headings",selectmode="extended",height=7)
         for key,label in zip(tree["columns"],("Session","Exercise","Active (s)","In band (s)","Ending excluded (s)","Tolerance (cm)")):
             tree.heading(key,text=label);tree.column(key,width=125)
-        tree.pack(fill="both",expand=True,padx=14)
+        tree.pack(side="left",fill="both",expand=True)
+        scrollbar=ttk.Scrollbar(preview,orient="vertical",command=tree.yview)
+        scrollbar.pack(side="right",fill="y");tree.configure(yscrollcommand=scrollbar.set)
         for i,row in enumerate(rows):
             tail="Unknown" if row["trailing_out_ms"] is None else f"{row['trailing_out_ms']/1000:.2f}"
             tree.insert("","end",iid=str(i),values=(row["session_id"],EXERCISES[row["exercise"]],f"{row['active_ms']/1000:.2f}",f"{row['in_band_ms']/1000:.2f}",tail,f"±{row['band_cm']:g}"))
@@ -201,12 +220,14 @@ class ResultsApp:
         index=self.selected_index()
         if index is None:
             self.verdict.configure(text="No session selected",fg="#3d5870")
-            self.stats.set("Open a CSV or read the Arduino to add results.");self.feedback.set("");return
+            self.stats.set("Open a CSV or read the Arduino to add results.");self.feedback.set("")
+            self.progress_text.set("No session selected for comparison.");return
         row=self.rows[index]
         if not self.confirmed:
             self.verdict.configure(text="Confirm criteria first",fg="#3d5870")
             self.stats.set(f"Recorded active time: {row['active_ms']/1000:.1f}s    |    Recorded in-band time: {row['in_band_ms']/1000:.1f}s")
-            self.feedback.set("Enter your target durations, then click Review & confirm.");return
+            self.feedback.set("Enter your target durations, then click Review & confirm.")
+            self.progress_text.set("Confirm criteria before comparing previous results.");return
         targets,minimum=self.criteria();r=evaluate(row,targets,minimum)
         color={"Good":"#16734a","Not good yet":"#ae4b1a","Cannot evaluate":"#586b7e"}[r["status"]]
         self.verdict.configure(text=r["status"],fg=color)
@@ -316,7 +337,9 @@ def smoke_test():
         root=tk.Tk();root.withdraw();app=ResultsApp(root,Path(directory)/"test.sqlite3")
         rows=[normalize(dict(session_id=i,exercise="wall_sit",active_ms=35000,in_band_ms=27000+i*1000,reference_cm=50,band_cm=10,trailing_out_ms=5000,has_hold=1,history_id=1)) for i in (1,2)]
         app.store.add("Participant 1",rows);app.rows=app.store.load("Participant 1")
-        app.wall.set("25");app.plank.set("25");app.minimum.set("90");app.confirmed=True
+        app.wall.set("25");app.plank.set("25");app.minimum.set("90")
+        assert not app.confirmed
+        app.accept_criteria(*app.criteria())
         app.refresh_table();root.update()
         assert app.verdict.cget("text")=="Good"
         assert "previous compatible" in app.progress_text.get()
@@ -331,4 +354,9 @@ def smoke_test():
 if __name__=="__main__":
     if "--smoke-test" in sys.argv:smoke_test()
     else:
-        root=tk.Tk();ResultsApp(root);root.mainloop()
+        root=tk.Tk()
+        try:ResultsApp(root)
+        except Exception as error:
+            messagebox.showerror("Could not start Hold Results",str(error),parent=root)
+            root.destroy();raise SystemExit(1)
+        root.mainloop()
