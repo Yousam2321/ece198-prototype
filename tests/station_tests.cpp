@@ -118,5 +118,40 @@ int main(){
   session.finish(fakeNow);lastSaveSucceeded=false;finalResultShown=false;
   updateDisplay();assert(strstr(fakeScreen[4], "SAVE FAILED"));
 #endif
+  // Button-only history erase: explicit menu, release, confirm; MODE cancels.
+  // Start from IDLE; completed records remain until the final short GO press.
+  resetSession();uint32_t savedBeforeErase=archive.latestId();assert(savedBeforeErase>0);
+  auto bothButtons=[](uint32_t duration){
+    fakePins[GO_PIN]=LOW;fakePins[MODE_PIN]=LOW;advance(duration);
+    fakePins[GO_PIN]=HIGH;fakePins[MODE_PIN]=HIGH;advance(60);
+  };
+  bothButtons(500);assert(!erasePrompt && session.state==IDLE);
+  assert(archive.latestId()==savedBeforeErase);
+  fakePins[GO_PIN]=LOW;fakePins[MODE_PIN]=LOW;advance(3200);
+  assert(erasePrompt && eraseWaitRelease);
+#if ENABLE_OLED
+  updateDisplay();assert(strstr(fakeScreen[0],"ERASE HISTORY?"));
+#endif
+  fakePins[GO_PIN]=HIGH;fakePins[MODE_PIN]=HIGH;advance(60);
+  assert(erasePrompt && !eraseWaitRelease && archive.latestId()==savedBeforeErase);
+  fakePins[MODE_PIN]=LOW;advance(200);fakePins[MODE_PIN]=HIGH;advance(60);
+  assert(!erasePrompt && archive.latestId()==savedBeforeErase && session.state==IDLE);
+  bothButtons(3200);assert(erasePrompt && !eraseWaitRelease);
+  pressGo(200);assert(!erasePrompt && eraseResult==1 && archive.latestId()==0);
+  assert(session.state==IDLE && session.active==0 && rangeTimer.total==0);
+#if ENABLE_OLED
+  updateDisplay();assert(strstr(fakeScreen[0],"HISTORY CLEARED"));
+#endif
+  SessionArchive<EEPROMClass> afterErase(EEPROM);assert(afterErase.latestId()==0);
+  SavedSession fresh={0,1000,500,500,100,0};assert(archive.append(fresh) && fresh.id==1);
+  // Both buttons during a running session must not erase, finish or calibrate.
+  go();advance(3100);assert(session.state==RUNNING);
+  bothButtons(3200);assert(!erasePrompt && session.state==RUNNING && archive.latestId()==1);
+  finishSession();assert(session.state==DONE);
+  bothButtons(3200);assert(erasePrompt && session.state==DONE);
+  pressGo(200);assert(eraseResult==1 && archive.latestId()==0 && session.state==IDLE);
+  // Erase touches archive bytes only.
+  memory.bytes[900]=0x5A;assert(log.clear());assert(memory.bytes[900]==0x5A);
+  for(int i=0;i<420;++i)assert(memory.bytes[i]==0);
   std::cout<<"Station restart, button, timing and EEPROM tests passed\n";
 }
