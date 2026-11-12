@@ -277,6 +277,7 @@ class ResultsApp:
             self.verdict.configure(text="Import results to begin",fg="#3d5870")
             self.stats.set("Open a CSV or read the Arduino to add results.");self.feedback.set("")
             self.progress_text.set("");return
+        self.table.see(str(index))
         row=self.rows[index];chest=row['exercise']=='chest_press'
         context=f"travel {abs(row['pressed_cm']-row['start_cm']):.1f}cm" if chest else f"target zone ±{row['band_cm']:g}cm"
         self.attempt_title.set(f"{EXERCISES[row['exercise']]} - Session {attempt_number(self.rows,index)} - {context}")

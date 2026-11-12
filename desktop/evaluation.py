@@ -77,8 +77,14 @@ def normalize(row):
 
 def load_csv(path):
     with Path(path).open(newline="", encoding="utf-8-sig") as source:
-        rows = list(csv.DictReader(source))
-    return [normalize(row) for row in rows]
+        reader=csv.DictReader(source)
+        headers=set(reader.fieldnames or [])
+        if 'active_seconds' in headers and 'active_ms' not in headers:
+            raise ValueError('This is an older evaluated report. Open the original Arduino saved_sessions CSV instead. New evaluated exports can be re-imported.')
+        rows=list(reader)
+    try:return [normalize(row) for row in rows]
+    except KeyError as error:
+        raise ValueError(f'Missing result column: {error.args[0]}. Open the original saved-session CSV.') from None
 
 
 def evaluate(row, targets, minimum, rep_minimum=90):
