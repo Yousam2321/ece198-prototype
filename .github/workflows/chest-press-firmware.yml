@@ -39,9 +39,7 @@ jobs:
           arduino-cli core install arduino:renesas_uno@1.6.0
           arduino-cli lib update-index
           arduino-cli lib install U8g2 LiquidCrystal@1.0.7 "SparkFun MAX3010x Pulse and Proximity Sensor Library@1.1.2"
-      - name: Compile original-based Part A for Uno R3
-        run: arduino-cli compile --fqbn arduino:avr:uno --build-path build/parta-r3 PartA
-      - name: Compile original-based Part A for Uno R4 Minima
+      - name: Compile rewritten Part A for its Uno R4 Minima
         run: arduino-cli compile --fqbn arduino:renesas_uno:minima --build-path build/parta-r4 PartA
       - name: Compile Uno with SH1106 OLED
         run: arduino-cli compile --fqbn arduino:avr:uno --build-path build/sh1106 HoldStation
@@ -51,7 +49,7 @@ jobs:
         run: arduino-cli compile --fqbn arduino:avr:uno --build-property compiler.cpp.extra_flags=-DENABLE_OLED=0 --build-path build/serial HoldStation
       - uses: actions/upload-artifact@v4
         with:
-          name: ECE198-Complete-Project-A1.6-B2.7
+          name: ECE198-Complete-Project-A2.0-B2.7
           path: |
             HoldStation/
             PartA/

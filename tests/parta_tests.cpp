@@ -6,196 +6,184 @@
 uint32_t fakeNow=0,fakePulse=0;
 int fakePins[20]={},fakeAnalog[3]={512,512,512};
 FakeSerial Serial;EEPROMClass EEPROM;PartAWire Wire;
-bool fakeSensorPresent=false,fakeBeat=false;
+bool fakeSensorPresent=true,fakeBeat=false;
+uint8_t fakeWireError=0;
 long fakeIr=0;
 #if defined(ARDUINO_ARCH_RENESAS_UNO)
 bool fakeUsbInterruptsEnabled=true,fakeUsbCloseOnSubmit=false,fakeUsbFullOnSubmit=false;
 #endif
 #include "../PartA/PartA.ino"
 void advanceA(uint32_t ms){for(uint32_t i=0;i<ms;++i){++fakeNow;loop();}}
-void startPress(uint32_t ms){fakePins[START_BUTTON]=LOW;advanceA(ms);fakePins[START_BUTTON]=HIGH;advanceA(70);}
-void exercisePress(){fakePins[EXERCISE_BUTTON]=LOW;advanceA(200);fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);}
-void squat(){fakeAnalog[Z_PIN]=412;advanceA(250);fakeAnalog[Z_PIN]=512;advanceA(350);}
-void latRaise(){fakeAnalog[Y_PIN]=612;advanceA(250);fakeAnalog[Y_PIN]=512;advanceA(350);}
-void openHistoryMenu(){
-  fakePins[START_BUTTON]=LOW;fakePins[EXERCISE_BUTTON]=LOW;advanceA(3200);
-  assert(historyMenu==HISTORY_CONFIRM && !exerciseRunning);
-  fakePins[START_BUTTON]=HIGH;fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);
-  assert(historyArmed);
+void press(uint8_t pin,uint32_t ms=150){
+  fakePins[pin]=LOW;advanceA(ms);fakePins[pin]=HIGH;advanceA(70);
 }
-int main(){
-#if defined(ARDUINO_ARCH_RENESAS_UNO)
-  Serial.rejectCoreWrite=true;Serial.rejectCorePoll=true; // Exercise actual R4 transport selection.
-#endif
-  for(int& v:fakePins)v=HIGH;
-  setup();assert(sessionArchive.latestId()==0 && !exerciseRunning);
-  startPress(200);assert(exerciseRunning && sessionTouched[0]);
-  squat();assert(exerciseReps[0]==1);advanceA(1300);squat();assert(exerciseReps[0]==2);
-  startPress(1200);assert(!exerciseRunning && !sessionEnded && sessionArchive.latestId()==0);
-  uint32_t stopped=activeMs[0];advanceA(1500);assert(activeMs[0]==stopped);
-  startPress(200);assert(exerciseRunning && exerciseReps[0]==2);
-  pulseSensorReady=true;fakeIr=60000;fakeBeat=true;updatePulseSensor();
-  fakeNow+=1000;updateSessionClock();fakeBeat=true;updatePulseSensor();
-  assert(sessionBpmSamples[0]==1);fakeIr=0;updatePulseSensor();assert(averageBPM==0);
-  startPress(3200);assert(sessionEnded && !exerciseRunning && exerciseReps[0]==0);
-  PartASavedSession saved;assert(sessionArchive.readId(1,saved));
-  assert(saved.reps==2 && saved.exercise==0 && saved.activeMs>stopped && saved.bpmSamples==1 && saved.bpmTenths==600);
-  endSession();assert(sessionArchive.latestId()==1); // Ended/unused modes do not save twice.
-  PartAArchive<EEPROMClass> reboot(EEPROM);assert(reboot.readId(1,saved) && saved.reps==2);
-  Serial.output.clear();handleHistoryCommand("history");
-  assert(Serial.output.find("ASAVED,1,squats,")!=std::string::npos && Serial.output.find("# END_A_HISTORY")!=std::string::npos);
-  startPress(200);assert(exerciseRunning);squat();assert(exerciseReps[0]==1);
-  exercisePress();assert(currentExercise==0); // Original running-switch restriction stays.
-  startPress(200);assert(!exerciseRunning);exercisePress();
-  assert(currentExercise==1 && exerciseReps[0]==0 && sessionArchive.latestId()==2);
-  assert(reboot.readId(2,saved) && saved.exercise==0 && saved.reps==1 && saved.bpmSamples==0);
-  startPress(200);
-  // A shallow Y excursion used to satisfy the old 20-unit threshold. With the
-  // uploaded 25-unit threshold, baseline tracking leaves fewer than 3 qualifying
-  // readings, so returning must not produce a rep. Exercise the real ADC loop.
-  fakeAnalog[Y_PIN]=540;advanceA(250);fakeAnalog[Y_PIN]=512;advanceA(350);
-  assert(exerciseReps[1]==0 && !latRaiseDetected);
-  // A brief spike also must not become a rep; a full raise/return still counts.
-  fakeAnalog[Y_PIN]=612;advanceA(50);fakeAnalog[Y_PIN]=512;advanceA(350);
-  assert(exerciseReps[1]==0 && !latRaiseDetected);
-  latRaise();assert(exerciseReps[1]==1);
-  // A partial lateral raise must not bridge across the history-menu pause.
-  advanceA(1300);fakeAnalog[Y_PIN]=612;advanceA(250);assert(latRaiseDetected);
-  EEPROMClass beforeLatMenu=EEPROM;openHistoryMenu();
-  assert(!latRaiseDetected && exerciseReps[1]==1);
-  exercisePress();advanceA(2050);assert(exerciseRunning && historyMenu==HISTORY_NORMAL);
-  fakeAnalog[Y_PIN]=512;advanceA(350);assert(exerciseReps[1]==1);
-  assert(memcmp(beforeLatMenu.bytes,EEPROM.bytes,1024)==0);
-  startPress(200);exercisePress();assert(currentExercise==0 && sessionArchive.latestId()==3);
-  assert(reboot.readId(3,saved) && saved.exercise==1 && saved.reps==1);
-  // Save failure pauses and keeps the counts; a retry saves once.
-  startPress(200);squat();assert(exerciseReps[0]==1);
-  EEPROM.writes=0;EEPROM.failAfter=0;bool failed=false;
-  try{endSession();}catch(int){failed=true;}assert(failed && exerciseReps[0]==1);
-  EEPROM.failAfter=-1;endSession();assert(sessionArchive.latestId()==4 && exerciseReps[0]==0);
-  // No BPM data is represented as absent, never a zero BPM measurement.
-  assert(reboot.readId(4,saved) && saved.bpmSamples==0 && saved.bpmTenths==0);
-  handleHistoryCommand("erase CONFIRM");assert(sessionArchive.latestId()==0 && sessionArchive.historyId()==2);
-  // Button-only history menu: consume both-button holds before normal handlers.
-  PartASavedSession menuRecord={0,5000,0,5,0,0,0};assert(sessionArchive.append(menuRecord));
-  EEPROMClass beforeMenu=EEPROM;int selected=currentExercise;
-  fakePins[START_BUTTON]=LOW;fakePins[EXERCISE_BUTTON]=LOW;advanceA(2000);
-  fakePins[START_BUTTON]=HIGH;fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);
-  assert(historyMenu==HISTORY_NORMAL && !exerciseRunning && currentExercise==selected);
-  assert(memcmp(beforeMenu.bytes,EEPROM.bytes,1024)==0); // Insufficient hold ignored.
-  // EXERCISE first: do not switch before START joins the chord.
-  fakePins[EXERCISE_BUTTON]=LOW;advanceA(1000);assert(currentExercise==selected);
-  fakePins[START_BUTTON]=LOW;advanceA(3100);assert(historyMenu==HISTORY_CONFIRM);
-  assert(lcd.rows[0].find("ERASE HISTORY?")==0 && lcd.rows[1].find("START=YES EX=NO")==0);
-  advanceA(1500);assert(memcmp(beforeMenu.bytes,EEPROM.bytes,1024)==0);
-  fakePins[START_BUTTON]=HIGH;fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);
-  assert(historyArmed && !exerciseRunning && sessionArchive.latestId()==1);
-  exercisePress();assert(historyMenu==HISTORY_RESULT && lcd.rows[0].find("ERASE CANCELLED")==0);
-  assert(memcmp(beforeMenu.bytes,EEPROM.bytes,1024)==0 && currentExercise==selected);
-  advanceA(2050);assert(historyMenu==HISTORY_NORMAL);
-  // START first: its old one-second hold cannot save or start the session.
-  fakePins[START_BUTTON]=LOW;advanceA(1200);fakePins[EXERCISE_BUTTON]=LOW;advanceA(3100);
-  assert(historyMenu==HISTORY_CONFIRM && sessionArchive.latestId()==1);
-  fakePins[START_BUTTON]=HIGH;advanceA(100);assert(!historyArmed);
-  fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);assert(historyArmed);
-  // Both again while confirming must not erase on either release.
-  fakePins[START_BUTTON]=LOW;fakePins[EXERCISE_BUTTON]=LOW;advanceA(300);
-  fakePins[START_BUTTON]=HIGH;fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);
-  assert(sessionArchive.latestId()==1 && historyArmed);
-  startPress(200);assert(historyMenu==HISTORY_RESULT && sessionArchive.latestId()==0);
-  assert(lcd.rows[0].find("HISTORY CLEARED")==0 && !exerciseRunning && currentExercise==selected);
-  assert(sessionArchive.historyId()==3);
-  advanceA(2050);assert(historyMenu==HISTORY_NORMAL);
-  PartAArchive<EEPROMClass> clearedReboot(EEPROM);assert(clearedReboot.latestId()==0);
-  // Menu works while running: cancel preserves history/current count and returns
-  // to RUNNING, excluding menu time and never saving the attempt accidentally.
-  assert(sessionArchive.append(menuRecord)); // A saved result to preserve/erase.
-  startPress(200);squat();assert(exerciseRunning && exerciseReps[0]==1);
-  beforeMenu=EEPROM;
-  fakePins[START_BUTTON]=LOW;fakePins[EXERCISE_BUTTON]=LOW;advanceA(2000);
-  uint32_t duringMenu=activeMs[0];advanceA(200);assert(activeMs[0]==duringMenu);
-  fakePins[START_BUTTON]=HIGH;fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);
-  assert(exerciseRunning && historyMenu==HISTORY_NORMAL && exerciseReps[0]==1);
-  openHistoryMenu();duringMenu=activeMs[0];advanceA(1000);assert(activeMs[0]==duringMenu);
-  exercisePress();assert(historyMenu==HISTORY_RESULT && !exerciseRunning);
-  advanceA(2050);assert(exerciseRunning && historyMenu==HISTORY_NORMAL && exerciseReps[0]==1);
-  assert(uint32_t(activeMs[0]-duringMenu)<200 && memcmp(beforeMenu.bytes,EEPROM.bytes,1024)==0);
-  // Confirm while running: erase only saved records, then continue this attempt.
-  openHistoryMenu();startPress(200);assert(sessionArchive.latestId()==0 && sessionArchive.historyId()==4);
-  assert(exerciseReps[0]==1 && sessionTouched[0] && !sessionEnded);
-  advanceA(2050);assert(exerciseRunning && historyMenu==HISTORY_NORMAL);
-  // Paused attempts stay paused after both cancel and confirmed clear.
-  startPress(200);uint32_t pausedAt=activeMs[0];assert(!exerciseRunning);
-  assert(sessionArchive.append(menuRecord));beforeMenu=EEPROM;
-  openHistoryMenu();exercisePress();advanceA(2050);
-  assert(!exerciseRunning && !sessionEnded && activeMs[0]==pausedAt && exerciseReps[0]==1);
-  assert(memcmp(beforeMenu.bytes,EEPROM.bytes,1024)==0);
-  openHistoryMenu();startPress(200);advanceA(2050);
-  assert(!exerciseRunning && !sessionEnded && activeMs[0]==pausedAt && exerciseReps[0]==1);
-  assert(sessionArchive.latestId()==0 && sessionArchive.historyId()==5 && sessionTouched[0]);
-  startPress(200);assert(exerciseRunning);startPress(3200);assert(sessionEnded && sessionArchive.latestId()==1);
-  assert(sessionArchive.readId(1,saved) && saved.reps==1 && saved.historyId==5);
-  // Export through the actual command parser, close the host port, and use the
-  // same running sketch again. No reboot/reset is supplied by this test.
-  Serial.output.clear();Serial.input="history\n";advanceA(2);
-  assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
-  Serial.connected=false;Serial.space=0;Serial.output.clear();
-  // Reproduce the actual R4 core: available()>0 while a closed port's read()
-  // returns -1 without consuming bytes. The sketch must still service buttons.
-  Serial.input="\r\n";serialCommandLength=3;Serial.failedReads=0;
-  advanceA(1);assert(Serial.failedReads==1 && serialCommandLength==0);
-  startPress(200);squat();assert(exerciseRunning && exerciseReps[0]==1);
-  startPress(200);assert(!exerciseRunning);startPress(200);assert(exerciseRunning);
-  startPress(3200);assert(sessionEnded && sessionArchive.latestId()==2 && Serial.output.empty());
-  assert(sessionArchive.readId(2,saved) && saved.reps==1);
-  // An open host that stops reading also cannot trap a byte write forever.
-  Serial.connected=true;safeSerial.resetError();uint32_t blockedAt=fakeNow;
-  safeSerial.print("x");assert(safeSerial.failed() && uint32_t(fakeNow-blockedAt)<=20);
-  Serial.output.clear();Serial.input="history\n";advanceA(1);
-  assert(Serial.output.find("# END_A_HISTORY")==std::string::npos); // No success on partial transfer.
-  Serial.space=64;Serial.input="history\n";Serial.output.clear();advanceA(2);
-  assert(Serial.output.find("ASAVED,2,squats,")!=std::string::npos);
-  assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
-  // A long input burst is processed over several loop passes, leaving time for
-  // LCD/keys between chunks rather than draining an unbounded stream at once.
-  Serial.input=std::string(100,'x');serialCommandLength=0;
-  readHistoryCommands();assert(Serial.input.size()==68);
-  Serial.input.clear();serialCommandLength=0;
-#if defined(ARDUINO_ARCH_RENESAS_UNO)
-  // Host close or full FIFO between the preliminary check and submission must
-  // return immediately, flag transfer failure, and always restore USB IRQs.
-  safeSerial.resetError();fakeUsbCloseOnSubmit=true;uint32_t racedAt=fakeNow;
-  assert(safeSerial.write('x')==0 && safeSerial.failed());
-  assert(fakeUsbInterruptsEnabled && fakeNow==racedAt);
-  Serial.connected=true;safeSerial.resetError();fakeUsbFullOnSubmit=true;
-  assert(safeSerial.write('x')==0 && safeSerial.failed());
-  assert(fakeUsbInterruptsEnabled && fakeNow==racedAt);
-  Serial.space=64;safeSerial.resetError();assert(safeSerial.write('x')==1);
-  assert(fakeUsbInterruptsEnabled && !safeSerial.failed());
-  for(int cycle=0;cycle<3;++cycle){
-    Serial.connected=false;Serial.space=0;startPress(200);assert(exerciseRunning);
-    startPress(200);assert(!exerciseRunning);startPress(200);assert(exerciseRunning);
-    startPress(3200);assert(sessionEnded);
-    Serial.connected=true;Serial.space=64;Serial.input="history\n";Serial.output.clear();advanceA(2);
-    assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
-    assert(fakeUsbInterruptsEnabled);
+void go(){press(START_BUTTON);}
+void next(){press(EXERCISE_BUTTON);}
+void finish(){press(START_BUTTON,3200);}
+void beginAttempt(){
+  go();assert(session.state==COUNTDOWN && hasAttempt);
+  advanceA(3100);assert(session.state==RUNNING && session.active<400);
+}
+void squat(){fakeAnalog[Z_PIN]=412;advanceA(250);fakeAnalog[Z_PIN]=512;advanceA(350);}
+void raise(){fakeAnalog[Y_PIN]=612;advanceA(250);fakeAnalog[Y_PIN]=512;advanceA(350);}
+void openErase(){
+  fakePins[START_BUTTON]=fakePins[EXERCISE_BUTTON]=LOW;advanceA(3200);
+  assert(menu==ERASE_CONFIRM && session.state==PAUSED);
+  fakePins[START_BUTTON]=fakePins[EXERCISE_BUTTON]=HIGH;advanceA(70);
+  assert(menuArmed);
+}
+void commandA(const char* line){
+  Serial.input=line;advanceA(250);
+}
+void testArchive(){
+  EEPROMClass memory;PartAArchive<EEPROMClass> log(memory);PartASavedSession r;
+  for(int i=1;i<=25;++i){
+    PartASavedSession record={0,10000,0,5,0,0,uint8_t(i%2)};assert(log.append(record));
   }
-#endif
-  EEPROMClass memory;PartAArchive<EEPROMClass> log(memory);
-  for(int i=1;i<=25;++i){PartASavedSession r={0,10000,0,5,0,0,uint8_t(i%2)};assert(log.append(r));}
-  assert(!log.readId(5,saved) && log.readId(6,saved) && log.readId(25,saved));
+  assert(!log.readId(5,r) && log.readId(6,r) && log.readId(25,r));
+  PartAArchive<EEPROMClass> reboot(memory);
+  assert(reboot.readId(25,r) && r.reps==5); // Existing A1.x byte format.
   for(int cut=0;cut<24;++cut){
     EEPROMClass broken=memory;broken.writes=0;broken.failAfter=cut;PartAArchive<EEPROMClass> partial(broken);
-    PartASavedSession r={0,10000,0,3,750,3,0};try{partial.append(r);}catch(int){}
-    assert(!partial.readId(26,saved) && partial.readId(25,saved));
+    PartASavedSession record={0,10000,0,3,750,3,0};try{partial.append(record);}catch(int){}
+    assert(!partial.readId(26,r) && partial.readId(25,r));
   }
-  memory.bytes[((25-1)%20)*23+11]^=1;assert(!log.readId(25,saved));
+  memory.bytes[((25-1)%20)*23+11]^=1;assert(!log.readId(25,r));
   for(int cut=0;cut<477;++cut){
     EEPROMClass interrupted=memory;interrupted.writes=0;interrupted.failAfter=cut;
     PartAArchive<EEPROMClass> erasing(interrupted);try{erasing.clear();}catch(int){}
-    if(erasing.historyId()==2)assert(!erasing.readId(24,saved) && erasing.latestId()==0);
-    else assert(erasing.readId(24,saved));
+    if(erasing.historyId()==2)assert(!erasing.readId(24,r) && erasing.latestId()==0);
+    else assert(erasing.readId(24,r));
   }
-  assert(log.clear());PartASavedSession fresh={0,5000,0,2,800,2,1};assert(log.append(fresh) && fresh.id==1 && fresh.historyId==2);
-  std::cout<<"PASS: A detectors, 3s finish, timing, saves, BPM, erase in every session state / cancel / retained attempt, export close/stall recovery, persistence and interrupted writes\n";
+  assert(log.clear());PartASavedSession fresh={0,5000,0,2,800,2,1};
+  assert(log.append(fresh) && fresh.id==1 && fresh.historyId==2);
+}
+int main(int argc,char** argv){
+  for(int& value:fakePins)value=HIGH;
+#if defined(ARDUINO_ARCH_RENESAS_UNO)
+  Serial.rejectCoreWrite=Serial.rejectCorePoll=true;
+#endif
+  Serial.connected=false;
+  setup();assert(calibrating && sessionArchive.latestId()==0);
+  assert(Wire.timeout==5000);
+  advanceA(1100);assert(!calibrating && session.state==IDLE && Serial.output.empty());
+  // Fully standalone use: no monitor, no commands, no serial output.
+  beginAttempt();squat();assert(repCount==1);
+  advanceA(1300);squat();assert(repCount==2);
+  go();assert(session.state==PAUSED);
+  uint32_t paused=session.active;advanceA(5000);assert(session.active==paused);
+  go();assert(session.state==RUNNING && repCount==2);
+  // The saved mean includes accepted active beats only.
+  uint32_t beatTime=fakeNow;acceptPulseSample(60000,beatTime);fakeBeat=true;
+  acceptPulseSample(60000,beatTime+1000); // First detected beat.
+  fakeBeat=true;acceptPulseSample(60000,beatTime+2000);
+  assert(bpmSamples==1 && bpmSumTenths==600);
+  finish();assert(session.state==DONE && saved && repCount==2);
+  uint32_t firstDone=session.active;
+  PartASavedSession result;
+  assert(sessionArchive.readId(1,result) && result.reps==2 && result.bpmTenths==600);
+  assert(result.activeMs==firstDone && result.bpmSamples==1);
+  advanceA(5000);assert(session.state==DONE && session.active==firstDone && repCount==2);
+  auto screen0=lcd.rows[0],screen1=lcd.rows[1];
+  advanceA(2000);assert(lcd.rows[0]==screen0 && lcd.rows[1]==screen1);
+  finish();assert(sessionArchive.latestId()==1 && session.state==DONE); // No duplicate.
+  // One tap from DONE starts a completely fresh attempt, never IDLE/DONE loops.
+  beginAttempt();assert(repCount==0 && bpmSamples==0 && bpmSumTenths==0);
+  squat();assert(repCount==1);finish();assert(sessionArchive.latestId()==2);
+  next();assert(currentExercise==1 && session.state==IDLE && repCount==0);
+  beginAttempt();
+  // Threshold 25 rejects the team's formerly accepted shallow 20-unit motion.
+  fakeAnalog[Y_PIN]=540;advanceA(250);fakeAnalog[Y_PIN]=512;advanceA(350);
+  assert(repCount==0 && !latRaiseDetected);
+  fakeAnalog[Y_PIN]=612;advanceA(50);fakeAnalog[Y_PIN]=512;advanceA(350);
+  assert(repCount==0);
+  raise();assert(repCount==1);
+  // Switching while active/paused cannot discard counts silently.
+  next();assert(currentExercise==1 && session.state==RUNNING && repCount==1);
+  go();next();assert(currentExercise==1 && session.state==PAUSED && repCount==1);
+  press(EXERCISE_BUTTON,2200);assert(menu==CANCEL_CONFIRM);
+  advanceA(70);assert(menuArmed);
+  next();advanceA(2200);assert(menu==NORMAL && session.state==PAUSED && repCount==1);
+  press(EXERCISE_BUTTON,2200);advanceA(70);go();advanceA(2200);
+  assert(menu==NORMAL && session.state==IDLE && repCount==0 && sessionArchive.latestId()==2);
+  // Save failure keeps the result paused; retry saves once and returns DONE.
+  beginAttempt();raise();assert(repCount==1);
+  EEPROM.ignoreWrites=true;finish();
+  assert(session.state==PAUSED && saveFailed && repCount==1);
+  EEPROM.ignoreWrites=false;finish();assert(session.state==DONE && saved && sessionArchive.latestId()==3);
+  // Erase menu from DONE: opening hold cannot confirm; cancel preserves bytes.
+  EEPROMClass before=EEPROM;openErase();advanceA(1500);
+  assert(menu==ERASE_CONFIRM && memcmp(before.bytes,EEPROM.bytes,1024)==0);
+  next();advanceA(2200);assert(menu==NORMAL && session.state==DONE);
+  assert(memcmp(before.bytes,EEPROM.bytes,1024)==0 && repCount==1);
+  // Running erase: pause/exclude all menu time, keep the pending attempt.
+  beginAttempt();raise();uint16_t count=repCount;
+  openErase();uint32_t insideMenu=session.active;advanceA(1200);assert(session.active==insideMenu);
+  next();advanceA(2200);
+  assert(session.state==RUNNING && repCount==count && menu==NORMAL);
+  openErase();insideMenu=session.active;go();
+  assert(menu==NOTICE && sessionArchive.latestId()==0 && repCount==count);
+  advanceA(2200);assert(session.state==RUNNING && session.active-insideMenu<400);
+  finish();assert(sessionArchive.readId(1,result) && result.reps==count && result.historyId==2);
+  // Paused erase, cancelled and confirmed, both retain current statistics.
+  beginAttempt();go();paused=session.active;count=repCount;
+  openErase();next();advanceA(2200);
+  assert(session.state==PAUSED && session.active==paused && repCount==count);
+  openErase();go();advanceA(2200);
+  assert(session.state==PAUSED && session.active==paused && repCount==count);
+  finish();assert(session.state==DONE && sessionArchive.latestId()==1);
+  // Serial output is demand-driven. A stall/disconnect never blocks the loop.
+  Serial.connected=true;Serial.space=0;
+  commandA("history\n");assert(txLength>0);
+  beginAttempt();go();assert(session.state==PAUSED);go();finish();
+  assert(session.state==DONE && sessionArchive.latestId()==2);
+  Serial.space=64;Serial.output.clear();commandA("version\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.0\n");
+  Serial.output.clear();commandA("history\n");
+  assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
+  assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);
+  for(int cycle=0;cycle<5;++cycle){
+    Serial.connected=false;Serial.input="\r\n";Serial.output.clear();
+    beginAttempt();raise();finish();assert(session.state==DONE && saved);
+    assert(Serial.output.empty()); // No event/telemetry printing on button actions.
+    Serial.connected=true;Serial.space=64;Serial.output.clear();commandA("history\n");
+    assert(Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
+  }
+  std::string exportFixture=Serial.output;
+  Serial.output.clear();beginAttempt();commandA("history\n");
+  assert(Serial.output.find("pause_before_history")!=std::string::npos);
+  go();finish();
+  // Serial erase also retains the current DONE result and returns to normal UI.
+  commandA("erase CONFIRM\n");assert(menu==NOTICE && sessionArchive.latestId()==0);
+  advanceA(2200);assert(menu==NORMAL && session.state==DONE);
+  // Pulse fault is isolated: UI/session work even with a missing sensor.
+  fakeWireError=2;advanceA(1200);assert(!pulseSensorReady);
+  beginAttempt();finish();assert(session.state==DONE && saved);
+#if defined(ARDUINO_ARCH_RENESAS_UNO)
+  fakeUsbCloseOnSubmit=true;Serial.connected=true;
+  assert(serialLink.writeSome("x",1)==0 && fakeUsbInterruptsEnabled);
+  Serial.connected=true;fakeUsbFullOnSubmit=true;
+  assert(serialLink.writeSome("x",1)==0 && fakeUsbInterruptsEnabled);
+  Serial.space=64;assert(serialLink.writeSome("x",1)==1 && fakeUsbInterruptsEnabled);
+#endif
+  // Countdown menu must preserve remaining time; a tap cancels without saving.
+  resetAttempt(fakeNow);go();advanceA(1000);uint32_t remainingAt=fakeNow-session.countdownAt;
+  openErase();next();advanceA(2050);
+  assert(session.state==COUNTDOWN && fakeNow-session.countdownAt<remainingAt+700);
+  go();assert(session.state==IDLE);
+  before=EEPROM;openErase();next();advanceA(2200);
+  assert(session.state==IDLE && menu==NORMAL && memcmp(before.bytes,EEPROM.bytes,1024)==0);
+  // A partial movement must not complete across a pause/resume transition.
+  beginAttempt();fakeAnalog[Y_PIN]=612;advanceA(250);assert(latRaiseDetected);
+  go();fakeAnalog[Y_PIN]=512;advanceA(350);go();advanceA(350);
+  assert(repCount==0 && !latRaiseDetected);finish();
+  // Unsigned clock arithmetic across wrap, independently of the fake boot.
+  parta::Session wrapped;wrapped.reset(UINT32_MAX-200);wrapped.state=RUNNING;
+  wrapped.tick(100);assert(wrapped.active==301);
+  wrapped.state=PAUSED;wrapped.tick(500);assert(wrapped.active==301);
+  wrapped.state=RUNNING;wrapped.tick(600);assert(wrapped.active==401);
+  testArchive();
+  std::cout<<"PASS: A2 state/buttons, repeated saves/restarts, detector criteria, pulse polling, "
+             "all-state erase/cancel, timing, stalled/closed COM exports, legacy persistence and power-loss checks\n";
+  if(argc>1 && !strcmp(argv[1],"--emit-history"))std::cout<<exportFixture;
 }

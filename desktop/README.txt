@@ -52,8 +52,10 @@ The original detector does not save failed attempts, so there is no good-rep
 percentage or hold consistency for A. Active time excludes pauses. Mean BPM uses
 accepted beats during active exercise; missing beats display Unavailable. BPM
 and active time do not change the verdict. Graphs compare the same exercise only.
-Part A saves on long START (3 seconds) and before switching away from a paused,
-started exercise. The latest 20 completed sessions remain in the board's EEPROM.
+Part A A2.0 saves on long START (3 seconds) and keeps the result on screen.
+One START tap starts a new attempt. EXERCISE switches only at READY/DONE;
+hold EXERCISE 2 seconds while paused to cancel without saving. The latest 20
+completed sessions remain in the board's EEPROM, including existing A1.x rows.
 Use the updated exporter for ASAVED CSVs; older copies do not know this format.
 
 Session numbers are per exercise, not dates or shared board IDs. Import/export

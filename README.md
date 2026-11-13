@@ -4,22 +4,22 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A1.4 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `PartA/PartA.ino` — A2.0 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
 | `HoldStation/HoldStation.ino` — B2.7 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
-Part A is based on the team's uploaded **working two-exercise sketch**. Its detector functions, thresholds, LCD layout, pin mapping and button controls are extended as described below. The obsolete `WearableMonitor` implementation has been removed. Part B firmware is unchanged by the Part A integration. LED work remains deferred.
+Part A A2.0 rebuilds the session/button controller using explicit states like Part B. It retains the team's movement thresholds (including lateral raise 25), sensor pins, pulse data and existing EEPROM/CSV format. The obsolete `WearableMonitor` implementation has been removed. Part B is unchanged. LED work remains deferred.
 
 ## Upload Part A
 
 1. Install **LiquidCrystal by Arduino** and **SparkFun MAX3010x Pulse and Proximity Sensor Library** in Arduino IDE's Library Manager.
-2. Open `PartA/PartA.ino`, keeping `PartASessions.h` alongside it.
-3. Select your Part A board and its USB port, then Upload. Builds are checked for Uno R3 and Uno R4 Minima.
+2. Open `PartA/PartA.ino`, keeping all four files in that folder together, including the new `PartACore.h`.
+3. Select **Arduino Uno R4 Minima** and its USB port (COM6 on the current prototype), then Upload. Keep the accelerometer still during startup calibration.
 4. Keep the original working wiring. Pin assignments and tests are in [PART_A.md](docs/PART_A.md).
 
-**Part A controls:** briefly press/release START to start, pause or resume. Hold START for **3 seconds** to end. Tap/release EXERCISE to switch Squats / Lat Raises while stopped. A long START is handled while held; Part B has different finish timing.
+**Part A controls:** tap START to start a 3-second countdown, pause or resume. Hold START **3 seconds** while running/paused to finish/save once. SAVED retains final reps/time; one START tap begins the next attempt. EXERCISE switches exercises only at READY/DONE. While paused, hold EXERCISE 2 seconds to open Cancel attempt; START confirms, EXERCISE returns.
 
-**Added:** END saves before the original code clears the counts. Switching away from a started, paused exercise also saves before clearing it. Pausing alone does not finish/save a session. An unused exercise is not saved. The latest **20 Part A summaries** survive power cycles; newer saves replace the oldest. Unfinished RAM sessions are lost when power is removed. No automatic recovery or session calendar dates are claimed.
+**Saving:** finish explicitly before switching, or cancel a paused attempt. Pausing alone does not finish/save. Failed saves keep the pending attempt paused for retry. The latest **20 combined Part A summaries** survive power cycles; newer saves replace the oldest. Existing A1.x saved records remain readable. Unfinished RAM sessions are lost when power is removed.
 
 Each Part A record contains exercise, reps, active milliseconds excluding pauses, optional mean accepted BPM, beat-sample count, session ID and archive generation. The original LCD's rolling BPM display is preserved. Saved mean BPM uses accepted beats during active exercise only; no beats means **unavailable**, not zero.
 
@@ -58,7 +58,7 @@ At 115200 baud with Newline in Serial Monitor:
 
 | Board | Commands |
 |---|---|
-| Part A | `version`, `history`, `erase CONFIRM` (history/erase only while stopped) |
+| Part A | `version`, `status`, `history`, `erase CONFIRM` (history/erase only while stopped) |
 | Part B | `help`, `version`, `history`, `rep_history`; button instructions below |
 
 Part A history uses `ASAVED` rows and an explicit `# END_A_HISTORY` marker. The updated exporter and app support this format; old copies must be updated too. For button-only Part A erase at any session state, hold START+EXERCISE for at least 3 seconds until the prompt appears, then release both. At ERASE HISTORY?, tap/release START to confirm or EXERCISE to cancel. The current attempt pauses during the menu; its reps/time remain. After 2-second result feedback, a running attempt resumes and a paused attempt stays paused. Only saved history is cleared; finishing the current attempt later can add a new record. Serial erasure keeps the current RAM counters; both erase methods leave computer profiles/CSVs unchanged. An erase increments archive generation so new records are distinct.
@@ -84,12 +84,7 @@ C++ tests require g++. Python tests require `requirements.txt`. CI compiles the 
 
 No license is chosen on the team's behalf. Third-party libraries are installed separately under their own licenses. Participant data and exports are excluded from Git.
 
-Part A A1.2 keeps serial output bounded when the PC closes/stalls its connection, so sampling and controls can continue after export. Update the entire PartA folder, including PartASerial.h. Existing EEPROM records remain compatible.
 
-Part A A1.3 merges the uploaded lateral-raise update: the upward Y threshold is now 25 instead of 20. Its return threshold stays 5. Saving, erase controls, serial fixes and desktop compatibility are retained.
+## Part A A2.0 rewrite
 
-Part A A1.4 allows button-confirmed history erase before, during or after an exercise. The menu temporarily pauses counting and preserves the current attempt; cancel preserves all saved history.
-
-Part A A1.5 prevents an endless input loop when the R4 reports buffered serial data but a closed COM port returns no byte. It retains heart-rate sensing, the 25-unit lateral-raise threshold and existing saved records. Physical post-export confirmation is still required.
-
-Part A A1.6 replaces the R4 output transport: it queues bytes directly through TinyUSB instead of calling the R4 core's unbounded writer or USB-task-polling boolean conversion. Waiting for output space stays bounded and outside the USB interrupt guard. Update the whole PartA folder; the app, wiring, sensing thresholds and EEPROM format are unchanged. Verify buttons with Serial Monitor closed and after several open/close/export cycles on the physical R4.
+A2.0 replaces the earlier session/button code with explicit READY/countdown/running/paused/saving/DONE transitions. It retains the team's rep criteria, the 25-unit lateral-raise threshold, pulse measurements and existing EEPROM rows. Saved results stay on screen, each finish writes once, and one START tap begins the next attempt. Normal use has no continuous serial output; history is streamed in bounded chunks. Pulse samples are polled without the old 250 ms getIR wait. See [PART_A.md](docs/PART_A.md) for controls and the hardware acceptance test. The earlier Serial Monitor observation did not establish the cause of the reported freeze; A2.0 still requires testing on the physical R4.

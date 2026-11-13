@@ -1,1030 +1,435 @@
-
+/*
+ * ECE198 Part A A2.0 -- explicit session controller, as used by Part B.
+ * Arduino Uno R4 Minima. Existing wiring and exercise criteria are retained.
+ * START D2 -> GND; EXERCISE D3 -> GND (INPUT_PULLUP).
+ * MMA7361: X=A0, Y=A1, Z=A2. LCD: RS=7, E=8, data=9,10,11,12.
+ * MAX30102: SDA/SCL, with the same verified breakout power wiring as before.
+ *
+ * START tap: start 3s countdown / pause / resume / next attempt after DONE.
+ * START hold 3s: finish/save once. EXERCISE tap at READY/DONE: next exercise.
+ * EXERCISE hold 2s while paused: cancel confirmation (START yes, EXERCISE no).
+ * Both hold 3s: erase-history confirmation in any state; release, then choose.
+ * Normal use is silent on serial. Commands: version, history, status,
+ * erase CONFIRM (while not running). CSV/EEPROM format matches A1.x.
+ */
+#include <Arduino.h>
 #include <Wire.h>
 #include <LiquidCrystal.h>
+#include <EEPROM.h>
 #include "MAX30105.h"
 #include "heartRate.h"
-#include <EEPROM.h>
+#include "PartACore.h"
 #include "PartASessions.h"
 #include "PartASerial.h"
-PartASerialOutput<decltype(Serial)> safeSerial(Serial);
+#include <stdio.h>
+#include <string.h>
+#if defined(ARDUINO_ARCH_AVR)
+#error "Part A A2.0 targets the Uno R4 Minima. Select that board; Part B uses the Uno R3."
+#endif
 
-// ================= LCD =================
-
-LiquidCrystal lcd(7, 8, 9, 10, 11, 12);
-
-
-// ================= BUTTONS =================
-
-const int START_BUTTON = 2;
-const int EXERCISE_BUTTON = 3;
-
-const unsigned long DEBOUNCE_TIME = 50;
-const unsigned long LONG_PRESS_TIME = 3000; // Finish/save: hold START for 3 seconds.
-
-// Button 1
-bool startRawState = HIGH;
-bool startStableState = HIGH;
-unsigned long startChangeTime = 0;
-unsigned long startPressTime = 0;
-bool longPressHandled = false;
-
-// Button 2
-bool exerciseRawState = HIGH;
-bool exerciseStableState = HIGH;
-unsigned long exerciseChangeTime = 0;
-bool exerciseSwitchArmed = false;
-
-
-// ================= EXERCISES =================
-
-const char* exercises[] = {
-  "Squats",
-  "Lat Raises"
-};
-
-const int NUM_EXERCISES = 2;
-int currentExercise = 0;
-
-// Independent rep counters
-int exerciseReps[NUM_EXERCISES] = {0, 0};
-
-
-// ================= SESSION =================
-
-bool exerciseRunning = false;
-bool sessionEnded = false;
-
-
-// ================= SQUAT DETECTION =================
-
-// Existing squat thresholds - unchanged
-
-const float SQUAT_DOWN_THRESHOLD = -40.0;
-const float SQUAT_RETURN_THRESHOLD = -5.0;
-
-const byte SQUAT_DOWN_CONFIRM_SAMPLES = 3;
-const byte SQUAT_RETURN_CONFIRM_SAMPLES = 8;
-
-const unsigned long SQUAT_MIN_INTERVAL = 1200;
-
-bool squatDownDetected = false;
-
-byte squatDownSamples = 0;
-byte squatReturnSamples = 0;
-
-unsigned long lastSquatRepTime = 0;
-
-
-// ================= LAT RAISE DETECTION =================
-
-// Updated team data: higher upward threshold to reduce false counts.
-
-const float LAT_RAISE_UP_THRESHOLD = 25.0;
-const float LAT_RAISE_RETURN_THRESHOLD = 5.0;
-
-const byte LAT_RAISE_UP_CONFIRM_SAMPLES = 3;
-const byte LAT_RAISE_RETURN_CONFIRM_SAMPLES = 8;
-
-const unsigned long LAT_RAISE_MIN_INTERVAL = 1200;
-
-bool latRaiseDetected = false;
-
-byte latRaiseUpSamples = 0;
-byte latRaiseReturnSamples = 0;
-
-unsigned long lastLatRaiseRepTime = 0;
-
-
-// ================= ACCELEROMETER =================
-
-const int X_PIN = A0;
-const int Y_PIN = A1;
-const int Z_PIN = A2;
-
-const float GRAVITY_ALPHA = 0.05;
-
-float gravityX = 0;
-float gravityY = 0;
-float gravityZ = 0;
-
-float x = 0;
-float y = 0;
-float z = 0;
-
-unsigned long lastAccelUpdate = 0;
-const unsigned long ACCEL_DELAY = 25;
-
-
-// ================= PULSE SENSOR =================
-
+using namespace parta;
+const uint8_t START_BUTTON=2, EXERCISE_BUTTON=3;
+const uint8_t X_PIN=A0,Y_PIN=A1,Z_PIN=A2;
+LiquidCrystal lcd(7,8,9,10,11,12);
 MAX30105 pulseSensor;
-bool pulseSensorReady = false;
-
-const long FINGER_THRESHOLD = 50000;
-
-long irValue = 0;
-long lastBeat = 0;
-
-float bpm = 0;
-float averageBPM = 0;
-
-const byte RATE_SIZE = 5;
-byte rates[RATE_SIZE];
-
-byte rateSpot = 0;
-byte validRates = 0;
-
-
-// ================= LCD UPDATE =================
-
-unsigned long lastLCDUpdate = 0;
-const unsigned long LCD_DELAY = 250;
-
-
-// ================= ADDED: HISTORY AND EXPORT =================
-// Detection thresholds, confirmation samples and pin mapping are unchanged.
 PartAArchive<EEPROMClass> sessionArchive(EEPROM);
-uint32_t activeMs[NUM_EXERCISES]={0,0};
-bool sessionTouched[NUM_EXERCISES]={false,false};
-float sessionBpmSum[NUM_EXERCISES]={0,0};
-uint16_t sessionBpmSamples[NUM_EXERCISES]={0,0};
-uint32_t sessionClockAt=0;
-char serialCommand[32];
-uint8_t serialCommandLength=0;
+PartASerialLink<decltype(Serial)> serialLink(Serial);
+Session session;
+Key startKey,exerciseKey;
+uint8_t currentExercise=0; // 0=squats, 1=lateral raises
+uint16_t repCount=0;
+uint32_t bpmSumTenths=0,lastBeatAt=0;
+uint16_t bpmSamples=0,displayBpm=0;
+bool beatSeen=false,pulseSensorReady=false,hasAttempt=false,saveFailed=false,saved=false;
+uint32_t savedId=0;
 
-// The existing buttons also open a protected history menu. Debounce this
-// separately so a two-button hold cannot leak into the normal button handlers.
-struct HistoryKey {
-  bool raw=HIGH,stable=HIGH;
-  uint32_t changedAt=0;
-  bool update(bool reading,uint32_t now){
-    if(reading!=raw){raw=reading;changedAt=now;}
-    if(uint32_t(now-changedAt)>=DEBOUNCE_TIME && stable!=raw){
-      stable=raw;return stable==HIGH; // An action requires a fresh release.
+// Keep the team's original detector thresholds, confirmation samples, EMA
+// baseline tracking (alpha .05) and 1200 ms movement-entry cooldown.
+const float SQUAT_DOWN_THRESHOLD=-40.0f,SQUAT_RETURN_THRESHOLD=-5.0f;
+const float LAT_RAISE_UP_THRESHOLD=25.0f,LAT_RAISE_RETURN_THRESHOLD=5.0f;
+bool squatDownDetected=false,latRaiseDetected=false;
+uint8_t squatDownSamples=0,squatReturnSamples=0,latRaiseUpSamples=0,latRaiseReturnSamples=0;
+uint32_t lastSquatRepTime=0,lastLatRaiseRepTime=0;
+float gravityX=0,gravityY=0,gravityZ=0,x=0,y=0,z=0;
+bool calibrating=true;
+uint16_t calibrationSamples=0;
+uint32_t calibrationAt=0,lastAccelAt=0,lastPulseAt=0,lastPulseHealthAt=0,lastPulseSampleAt=0;
+const uint32_t FINGER_THRESHOLD=50000UL;
+uint8_t rates[5]={},rateSpot=0,validRates=0;
+
+// Menus pause the session without changing the attempt or saved archive.
+// The original state is restored only after the menu/result has finished.
+enum Menu : uint8_t { NORMAL, ERASE_HOLD, ERASE_CONFIRM, CANCEL_CONFIRM, NOTICE };
+Menu menu=NORMAL;
+State menuReturnState=IDLE;
+Key menuStart,menuExercise;
+bool menuArmed=false,chordTiming=false;
+uint32_t menuAt=0,chordAt=0,noticeAt=0;
+const char* noticeTop="";
+const char* noticeBottom="";
+char lcdCache[2][17]={{0},{0}};
+uint32_t lastDisplayAt=0;
+
+// At most one CSV row is queued. Exports move one row/chunk each main-loop
+// pass, so host close/stall never becomes a wait loop that blocks the buttons.
+enum Reply : uint8_t { NO_REPLY, HISTORY_REPLY, VERSION_REPLY, STATUS_REPLY, ERASE_REPLY };
+Reply reply=NO_REPLY;
+uint8_t replyPhase=0,txLength=0,txAt=0;
+char tx[144],command[32];
+uint8_t commandLength=0;
+uint32_t exportFirst=0,exportLast=0,exportNext=0,exportGeneration=0,serialProgressAt=0;
+bool hostWasConnected=false,serialEraseSucceeded=false;
+
+const char* exerciseName(){return currentExercise==0?"squats":"lateral_raises";}
+const char* screenName(){return currentExercise==0?"SQ":"LAT";}
+void renderDisplay(bool force=false);
+
+void resetDetectors(){
+  squatDownDetected=latRaiseDetected=false;
+  squatDownSamples=squatReturnSamples=latRaiseUpSamples=latRaiseReturnSamples=0;
+}
+void resetAttempt(uint32_t now){
+  session.reset(now);repCount=0;bpmSumTenths=0;bpmSamples=0;
+  hasAttempt=false;saveFailed=false;saved=false;savedId=0;
+  lastSquatRepTime=lastLatRaiseRepTime=0;resetDetectors();
+}
+void abortReply(){reply=NO_REPLY;txLength=txAt=0;replyPhase=0;}
+void finishAttempt(uint32_t now){
+  if(!hasAttempt || (session.state!=RUNNING && session.state!=PAUSED))return;
+  session.tick(now);session.state=SAVING;resetDetectors();
+  renderDisplay(true); // Show saving before touching EEPROM.
+  abortReply(); // A changing archive must never finish an old partial export.
+  PartASavedSession record={0,session.active,0,repCount,
+    bpmSamples?uint16_t((bpmSumTenths+bpmSamples/2)/bpmSamples):uint16_t(0),
+    bpmSamples,currentExercise};
+  bool ok=sessionArchive.append(record);
+  session.last=millis(); // Never credit save time.
+  if(ok){saved=true;savedId=record.id;saveFailed=false;session.state=DONE;}
+  else {saveFailed=true;session.state=PAUSED;} // Keep the attempt for retry.
+  renderDisplay(true);
+}
+void startOrToggle(uint32_t now){
+  resetDetectors();
+  if(session.state==IDLE || session.state==DONE){
+    resetAttempt(now);session.start(now);hasAttempt=true;
+  }else if(session.state==COUNTDOWN){resetAttempt(now);}
+  else if(session.state==RUNNING){session.tick(now);session.state=PAUSED;}
+  else if(session.state==PAUSED){session.last=now;session.state=RUNNING;saveFailed=false;}
+}
+void enterMenu(Menu next,uint32_t now){
+  session.tick(now);menuReturnState=session.state;menuAt=now;
+  session.state=PAUSED;menu=next;menuArmed=false;chordTiming=false;
+  menuStart.suppress(true,now);menuExercise.suppress(true,now);
+  resetDetectors();
+}
+void leaveMenu(uint32_t now){
+  if(menuReturnState==COUNTDOWN)session.countdownAt+=uint32_t(now-menuAt);
+  session.state=menuReturnState;session.last=now;menu=NORMAL;
+  startKey.suppress(digitalRead(START_BUTTON)==LOW,now);
+  exerciseKey.suppress(digitalRead(EXERCISE_BUTTON)==LOW,now);
+  resetDetectors();
+}
+void showNotice(const char* top,const char* bottom,uint32_t now){
+  noticeTop=top;noticeBottom=bottom;noticeAt=now;menu=NOTICE;
+}
+bool eraseSavedHistory(){
+  abortReply();
+  bool ok=sessionArchive.clear();
+  if(ok){saved=false;savedId=0;} // A DONE result is retained on screen, not re-saved.
+  return ok;
+}
+void serviceButtons(uint32_t now){
+  bool go=digitalRead(START_BUTTON)==LOW,ex=digitalRead(EXERCISE_BUTTON)==LOW;
+  if(calibrating){startKey.suppress(go,now);exerciseKey.suppress(ex,now);return;}
+  if(menu==NORMAL && go && ex)enterMenu(ERASE_HOLD,now);
+  if(menu!=NORMAL){
+    startKey.suppress(go,now);exerciseKey.suppress(ex,now);
+    if(menu==ERASE_HOLD){
+      if(go && ex){
+        if(!chordTiming){chordAt=now;chordTiming=true;}
+        if(uint32_t(now-chordAt)>=3000){
+          menu=ERASE_CONFIRM;menuArmed=false;
+          menuStart.suppress(go,now);menuExercise.suppress(ex,now);
+        }
+      }else {chordTiming=false;if(!go && !ex)leaveMenu(now);}
+      return;
     }
-    return false;
-  }
-};
-enum HistoryMenu : uint8_t { HISTORY_NORMAL,HISTORY_CHORD,HISTORY_CONFIRM,HISTORY_RESULT };
-HistoryMenu historyMenu=HISTORY_NORMAL;
-HistoryKey historyStart,historyExercise;
-bool historyResumeRunning=false,historyHolding=false,historyArmed=false;
-uint32_t historyHoldAt=0,historyResultAt=0;
-
-void updateSessionClock();
-void resetSquatDetection();
-void resetLatRaiseDetection();
-
-void leaveHistoryMenu(){
-  updateSessionClock(); // Exclude the whole menu, including result feedback.
-  resetSquatDetection();resetLatRaiseDetection();
-  exerciseRunning=historyResumeRunning;historyResumeRunning=false;
-  historyMenu=HISTORY_NORMAL;lcd.clear();lastLCDUpdate=0;
-}
-
-void consumeHistoryButtons(bool start,bool exercise,uint32_t now){
-  startRawState=start;startStableState=start;startChangeTime=now;
-  exerciseRawState=exercise;exerciseStableState=exercise;exerciseChangeTime=now;
-  longPressHandled=true;exerciseSwitchArmed=false;
-}
-
-bool handleHistoryButtons(){
-  uint32_t now=millis();
-  bool start=digitalRead(START_BUTTON),exercise=digitalRead(EXERCISE_BUTTON);
-  bool startReleased=historyStart.update(start,now);
-  bool exerciseReleased=historyExercise.update(exercise,now);
-  bool both=start==LOW && exercise==LOW;
-  bool released=start==HIGH && exercise==HIGH && historyStart.stable==HIGH && historyExercise.stable==HIGH;
-  if(historyMenu==HISTORY_NORMAL){
-    if(!both)return false;
-    historyMenu=HISTORY_CHORD;historyHolding=false;
-    updateSessionClock();historyResumeRunning=exerciseRunning;
-    exerciseRunning=false; // Menu available in every session state.
-    resetSquatDetection();resetLatRaiseDetection();
-  }
-  // Consume all chord/menu transitions, including the final release. Neither
-  // the opening hold nor simultaneous confirmation presses can erase history.
-  consumeHistoryButtons(start,exercise,now);
-  if(historyMenu==HISTORY_CHORD){
-    if(both && historyStart.stable==LOW && historyExercise.stable==LOW){
-      if(!historyHolding){historyHolding=true;historyHoldAt=now;}
-      if(uint32_t(now-historyHoldAt)>=3000){
-        historyMenu=HISTORY_CONFIRM;historyArmed=false;
-        lcd.clear();lcd.setCursor(0,0);lcd.print(F("ERASE HISTORY?"));
-        lcd.setCursor(0,1);lcd.print(F("START=YES EX=NO"));
-        safeSerial.println(F("A_EVENT,part_a,erase_history_prompt"));
+    if(menu==NOTICE){
+      if(!go && !ex && uint32_t(now-noticeAt)>=2000)leaveMenu(now);
+      return;
+    }
+    if(!menuArmed){
+      if(!go && !ex){
+        menuArmed=true;menuStart.suppress(false,now);menuExercise.suppress(false,now);
       }
-    }else historyHolding=false;
-    if(released)leaveHistoryMenu();
-    return true;
-  }
-  if(historyMenu==HISTORY_CONFIRM){
-    if(!historyArmed){if(released)historyArmed=true;return true;}
-    if(both){historyArmed=false;return true;}
-    if((startReleased && exercise==HIGH && historyExercise.stable==HIGH) ||
-       (exerciseReleased && start==HIGH && historyStart.stable==HIGH)){
-      lcd.clear();lcd.setCursor(0,0);
-      if(startReleased){
-        bool erased=sessionArchive.clear();
-        lcd.print(erased?F("HISTORY CLEARED"):F("ERASE FAILED"));
-        safeSerial.println(erased?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));
+      return;
+    }
+    if(go && ex){menuArmed=false;return;}
+    KeyEvent yes=menuStart.update(go,now,3000);
+    KeyEvent no=menuExercise.update(ex,now,2000);
+    if(yes!=NO_KEY){
+      if(menu==ERASE_CONFIRM){
+        renderDisplay(true);
+        bool ok=eraseSavedHistory();
+        showNotice(ok?"HISTORY CLEARED":"ERASE FAILED","Attempt kept",millis());
       }else{
-        lcd.print(F("ERASE CANCELLED"));safeSerial.println(F("A_EVENT,part_a,erase_cancelled"));
+        resetAttempt(now);menuReturnState=IDLE;
+        showNotice("NOT SAVED","Attempt cancelled",now);
       }
-      historyMenu=HISTORY_RESULT;historyResultAt=now;
-    }
-    return true;
+    }else if(no!=NO_KEY)showNotice("CANCELLED",menu==ERASE_CONFIRM?"History kept":"Attempt kept",now);
+    return;
   }
-  // Keep confirmation visible, then return to the original LCD without turning
-  // a held confirmation button into a new exercise/start action.
-  if(released && uint32_t(now-historyResultAt)>=2000){
-    leaveHistoryMenu();
+  KeyEvent goEvent=startKey.update(go,now,3000);
+  KeyEvent exEvent=exerciseKey.update(ex,now,2000);
+  if(goEvent==TAP)startOrToggle(now);
+  else if(goEvent==HOLD){
+    if(session.state==COUNTDOWN)resetAttempt(now);
+    else finishAttempt(now);
   }
-  return true;
+  if(exEvent==TAP && (session.state==IDLE || session.state==DONE)){
+    currentExercise=uint8_t((currentExercise+1)%2);resetAttempt(now);
+  }else if(exEvent==HOLD && session.state==PAUSED){
+    enterMenu(CANCEL_CONFIRM,now);
+  }
 }
-
-void updateSessionClock(){
+void updateSquatCounter(uint32_t now){
+  if(currentExercise!=0 || session.state!=RUNNING){squatDownDetected=false;squatDownSamples=squatReturnSamples=0;return;}
+  if(!squatDownDetected){
+    if(z<=SQUAT_DOWN_THRESHOLD){if(squatDownSamples<3)++squatDownSamples;}else squatDownSamples=0;
+    if(squatDownSamples>=3 && (!lastSquatRepTime || uint32_t(now-lastSquatRepTime)>=1200)){
+      squatDownDetected=true;squatDownSamples=squatReturnSamples=0;
+    }
+  }else{
+    if(z>=SQUAT_RETURN_THRESHOLD){if(squatReturnSamples<8)++squatReturnSamples;}else squatReturnSamples=0;
+    if(squatReturnSamples>=8){
+      if(repCount<32767)++repCount;
+      lastSquatRepTime=now;
+      squatDownDetected=false;squatDownSamples=squatReturnSamples=0;
+    }
+  }
+}
+void updateLatRaiseCounter(uint32_t now){
+  if(currentExercise!=1 || session.state!=RUNNING){latRaiseDetected=false;latRaiseUpSamples=latRaiseReturnSamples=0;return;}
+  if(!latRaiseDetected){
+    if(y>=LAT_RAISE_UP_THRESHOLD){if(latRaiseUpSamples<3)++latRaiseUpSamples;}else latRaiseUpSamples=0;
+    if(latRaiseUpSamples>=3 && (!lastLatRaiseRepTime || uint32_t(now-lastLatRaiseRepTime)>=1200)){
+      latRaiseDetected=true;latRaiseUpSamples=latRaiseReturnSamples=0;
+    }
+  }else{
+    if(y<=LAT_RAISE_RETURN_THRESHOLD){if(latRaiseReturnSamples<8)++latRaiseReturnSamples;}else latRaiseReturnSamples=0;
+    if(latRaiseReturnSamples>=8){
+      if(repCount<32767)++repCount;
+      lastLatRaiseRepTime=now;
+      latRaiseDetected=false;latRaiseUpSamples=latRaiseReturnSamples=0;
+    }
+  }
+}
+void serviceAccelerometer(uint32_t now){
+  if(calibrating){
+    if(uint32_t(now-calibrationAt)<5)return;
+    calibrationAt=now;
+    gravityX+=analogRead(X_PIN);gravityY+=analogRead(Y_PIN);gravityZ+=analogRead(Z_PIN);
+    if(++calibrationSamples==200){
+      gravityX/=200;gravityY/=200;gravityZ/=200;calibrating=false;
+      lastAccelAt=now;session.last=now;
+    }
+    return;
+  }
+  uint32_t gap=uint32_t(now-lastAccelAt);
+  if(gap<25)return;
+  if(gap>150)resetDetectors(); // Never bridge a stalled/missing sample sequence.
+  lastAccelAt=now;
+  float rawX=analogRead(X_PIN),rawY=analogRead(Y_PIN),rawZ=analogRead(Z_PIN);
+  gravityX+=.05f*(rawX-gravityX);gravityY+=.05f*(rawY-gravityY);gravityZ+=.05f*(rawZ-gravityZ);
+  x=rawX-gravityX;y=rawY-gravityY;z=rawZ-gravityZ;
+  updateSquatCounter(now);updateLatRaiseCounter(now);
+}
+void clearPulseReading(){
+  displayBpm=0;beatSeen=false;validRates=rateSpot=0;
+}
+void acceptPulseSample(uint32_t ir,uint32_t now){
+  if(ir<FINGER_THRESHOLD){clearPulseReading();return;}
+  if(!checkForBeat(ir))return;
+  if(beatSeen){
+    uint32_t dt=uint32_t(now-lastBeatAt);
+    if(dt){
+      float bpm=60000.0f/dt;
+      if(bpm>=40 && bpm<=180){
+        rates[rateSpot]=uint8_t(bpm);rateSpot=uint8_t((rateSpot+1)%5);
+        if(validRates<5)++validRates;
+        uint16_t sum=0;for(uint8_t i=0;i<validRates;++i)sum+=rates[i];
+        displayBpm=sum/validRates;
+        if(session.state==RUNNING && bpmSamples<65535){
+          bpmSumTenths+=uint16_t(bpm*10+.5f);++bpmSamples;
+        }
+      }
+    }
+  }
+  lastBeatAt=now;beatSeen=true;
+}
+void servicePulse(uint32_t now){
+  if(!pulseSensorReady || uint32_t(now-lastPulseAt)<10)return;
+  lastPulseAt=now;
+  if(uint32_t(now-lastPulseHealthAt)>=1000){
+    lastPulseHealthAt=now;
+    Wire.beginTransmission(uint8_t(0x57));
+    if(Wire.endTransmission()!=0){pulseSensorReady=false;clearPulseReading();return;}
+  }
+  // No getIR()/safeCheck(250) wait. Poll once and consume buffered samples.
+  pulseSensor.check();
+  bool haveSample=false;uint32_t ir=0;
+  for(uint8_t i=0;i<4 && pulseSensor.available();++i){
+    ir=pulseSensor.getFIFOIR();pulseSensor.nextSample();haveSample=true;
+  }
+  if(haveSample){lastPulseSampleAt=now;acceptPulseSample(ir,now);}
+  else if(uint32_t(now-lastPulseSampleAt)>1500)clearPulseReading();
+}
+void setLine(uint8_t row,const char* value){
+  char padded[17];memset(padded,' ',16);padded[16]=0;
+  size_t n=strlen(value);if(n>16)n=16;memcpy(padded,value,n);
+  if(strcmp(padded,lcdCache[row])){
+    lcd.setCursor(0,row);lcd.print(padded);memcpy(lcdCache[row],padded,17);
+  }
+}
+void renderDisplay(bool force){
   uint32_t now=millis();
-  if(exerciseRunning && !sessionEnded)activeMs[currentExercise]+=uint32_t(now-sessionClockAt);
-  sessionClockAt=now;
-}
-
-void resetSessionStats(int exercise){
-  activeMs[exercise]=0;sessionTouched[exercise]=false;
-  sessionBpmSum[exercise]=0;sessionBpmSamples[exercise]=0;
-}
-
-void recordSessionBeat(float value){
-  if(exerciseRunning && !sessionEnded && sessionBpmSamples[currentExercise]<65535){
-    sessionBpmSum[currentExercise]+=value;++sessionBpmSamples[currentExercise];
+  if(!force && uint32_t(now-lastDisplayAt)<100)return;
+  lastDisplayAt=now;
+  char top[24],bottom[24];
+  if(calibrating){strcpy(top,"Calibrating...");strcpy(bottom,"Keep sensor still");}
+  else if(menu==ERASE_CONFIRM){strcpy(top,"ERASE HISTORY?");strcpy(bottom,"GO:yes EX:no");}
+  else if(menu==CANCEL_CONFIRM){strcpy(top,"CANCEL ATTEMPT?");strcpy(bottom,"GO:yes EX:no");}
+  else if(menu==NOTICE){strcpy(top,noticeTop);strcpy(bottom,noticeBottom);}
+  else if(menu==ERASE_HOLD){strcpy(top,"Hold both 3 sec");strcpy(bottom,"History menu...");}
+  else if(session.state==IDLE){
+    snprintf(top,sizeof(top),"%s A2.0 READY",screenName());strcpy(bottom,"GO:start EX:next");
+  }else if(session.state==COUNTDOWN){
+    uint32_t elapsed=uint32_t(now-session.countdownAt);
+    uint8_t seconds=elapsed>=3000?0:uint8_t(3-elapsed/1000);
+    snprintf(top,sizeof(top),"%s START IN %u",screenName(),seconds);strcpy(bottom,"GO:cancel");
+  }else if(session.state==SAVING){strcpy(top,"SAVING...");strcpy(bottom,"Please wait");}
+  else if(session.state==DONE){
+    snprintf(top,sizeof(top),"%s %s R%u",screenName(),saved?"SAVED":"DONE",repCount);
+    snprintf(bottom,sizeof(bottom),"%lus GO:new EX:>",(unsigned long)(session.active/1000));
+  }else if(saveFailed){
+    strcpy(top,"SAVE FAILED");strcpy(bottom,"Hold GO 3s retry");
+  }else{
+    snprintf(top,sizeof(top),"%s %s",screenName(),stateName(session.state));
+    char pulse[6]="---";if(displayBpm)snprintf(pulse,sizeof(pulse),"%u",displayBpm);
+    snprintf(bottom,sizeof(bottom),"R%u T%lus B%s",repCount,(unsigned long)(session.active/1000),pulse);
   }
+  setLine(0,top);setLine(1,bottom);
 }
-
-void printPartASaved(const PartASavedSession& r){
-  safeSerial.print(F("ASAVED,"));safeSerial.print(r.id);safeSerial.print(',');
-  safeSerial.print(r.exercise==0?F("squats"):F("lateral_raises"));safeSerial.print(',');
-  safeSerial.print(r.activeMs);safeSerial.print(',');safeSerial.print(r.reps);safeSerial.print(',');
-  if(r.bpmSamples)safeSerial.print(r.bpmTenths/10.0f,1);
-  safeSerial.print(',');safeSerial.print(r.bpmSamples);safeSerial.print(',');safeSerial.println(r.historyId);
+void queueLine(const char* line){
+  size_t size=strlen(line);if(size>=sizeof(tx))size=sizeof(tx)-1;
+  memcpy(tx,line,size);tx[size]=0;txLength=uint8_t(size);txAt=0;
 }
-
-bool saveCurrentSession(){
-  if(!sessionTouched[currentExercise])return true; // Never save an unused mode.
-  PartASavedSession r={0,activeMs[currentExercise],0,uint16_t(exerciseReps[currentExercise]),
-    sessionBpmSamples[currentExercise]?uint16_t(sessionBpmSum[currentExercise]/sessionBpmSamples[currentExercise]*10+.5f):uint16_t(0),
-    sessionBpmSamples[currentExercise],uint8_t(currentExercise)};
-  if(!sessionArchive.append(r)){safeSerial.println(F("A_EVENT,part_a,save_failed_counts_kept"));return false;}
-  sessionTouched[currentExercise]=false;printPartASaved(r);
-  return true;
+void queueSaved(const PartASavedSession& r){
+  char pulse[8]="";
+  if(r.bpmSamples)snprintf(pulse,sizeof(pulse),"%u.%u",r.bpmTenths/10,r.bpmTenths%10);
+  snprintf(tx,sizeof(tx),"ASAVED,%lu,%s,%lu,%u,%s,%u,%lu\n",
+    (unsigned long)r.id,r.exercise==0?"squats":"lateral_raises",
+    (unsigned long)r.activeMs,r.reps,pulse,r.bpmSamples,(unsigned long)r.historyId);
+  txLength=uint8_t(strlen(tx));txAt=0;
 }
-
-void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.6"));return;}
-  if(!strcmp(command,"history")){
-    if(exerciseRunning){safeSerial.println(F("A_EVENT,part_a,pause_before_history"));return;}
-    safeSerial.resetError();
-    safeSerial.println(F("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id"));
-    uint32_t latest=sessionArchive.latestId();
-    if(!latest){safeSerial.println(F("# No saved A sessions"));return;}
-    uint32_t first=latest>20?latest-19:1;PartASavedSession r;
-    for(uint32_t id=first;;++id){
-      if(sessionArchive.readId(id,r))printPartASaved(r);
-      if(safeSerial.failed())return; // Never mark a partial transfer complete.
-      if(id==latest)break;
+void beginReply(Reply kind,uint32_t now){
+  abortReply();reply=kind;serialProgressAt=now;
+}
+void handleCommand(const char* value,uint32_t now){
+  if(!strcmp(value,"version")){beginReply(VERSION_REPLY,now);return;}
+  if(!strcmp(value,"status")){beginReply(STATUS_REPLY,now);return;}
+  if(!strcmp(value,"history")){
+    beginReply(HISTORY_REPLY,now);
+    if(calibrating || menu!=NORMAL || session.state==RUNNING || session.state==COUNTDOWN){
+      queueLine("A_EVENT,part_a,pause_before_history\n");reply=NO_REPLY;return;
     }
-    safeSerial.println(F("# END_A_HISTORY"));return;
+    exportLast=sessionArchive.latestId();exportFirst=exportLast>20?exportLast-19:1;
+    exportNext=exportFirst;exportGeneration=sessionArchive.historyId();
+    return;
   }
-  if(!strcmp(command,"erase CONFIRM") && !exerciseRunning){
-    safeSerial.println(sessionArchive.clear()?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));return;
+  if(!strcmp(value,"erase CONFIRM") && !calibrating && menu==NORMAL &&
+      session.state!=RUNNING && session.state!=COUNTDOWN && session.state!=SAVING){
+    enterMenu(NOTICE,now);
+    serialEraseSucceeded=eraseSavedHistory();
+    showNotice(serialEraseSucceeded?"HISTORY CLEARED":"ERASE FAILED","Attempt kept",millis());
+    beginReply(ERASE_REPLY,millis());return;
   }
-  safeSerial.println(F("A_EVENT,part_a,command_not_available"));
+  beginReply(NO_REPLY,now);queueLine("A_EVENT,part_a,command_not_available\n");
 }
-
-void readHistoryCommands(){
-  // R4 available() can stay positive after the host closes the port, while
-  // read() returns -1 without consuming anything. Never spin on that state.
-  // Limit work per loop as well, so incoming traffic cannot starve buttons.
-  for(uint8_t remaining=sizeof(serialCommand);remaining && Serial.available();--remaining){
-    int received=Serial.read();
-    if(received<0){serialCommandLength=0;break;}
-    char ch=char(received);if(ch=='\r')continue;
+void prepareReply(){
+  if(reply==VERSION_REPLY){queueLine("# DEVICE,part_a,A2.0\n");reply=NO_REPLY;}
+  else if(reply==STATUS_REPLY){
+    snprintf(tx,sizeof(tx),"A_STATUS,%s,%s,%lu,%u,%u,%u,%u\n",exerciseName(),stateName(session.state),
+      (unsigned long)session.active,repCount,pulseSensorReady?1:0,
+      digitalRead(START_BUTTON)==LOW?1:0,digitalRead(EXERCISE_BUTTON)==LOW?1:0);
+    txLength=uint8_t(strlen(tx));txAt=0;reply=NO_REPLY;
+  }else if(reply==ERASE_REPLY){
+    queueLine(serialEraseSucceeded?"A_EVENT,part_a,history_cleared\n":"A_EVENT,part_a,erase_failed\n");reply=NO_REPLY;
+  }else if(reply==HISTORY_REPLY){
+    if(sessionArchive.historyId()!=exportGeneration){
+      queueLine("A_EVENT,part_a,pause_before_history\n");reply=NO_REPLY;return;
+    }
+    if(replyPhase==0){
+      queueLine("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id\n");replyPhase=1;
+    }else if(!exportLast){queueLine("# No saved A sessions\n");reply=NO_REPLY;}
+    else if(replyPhase==1){
+      PartASavedSession r;
+      uint32_t id=exportNext; // At most one record search per main-loop pass.
+      if(id==exportLast)replyPhase=2;else ++exportNext;
+      if(sessionArchive.readId(id,r))queueSaved(r);
+    }else{queueLine("# END_A_HISTORY\n");reply=NO_REPLY;}
+  }
+}
+void serviceSerial(uint32_t now){
+  bool connected=serialLink.connected();
+  if(!connected){abortReply();commandLength=0;hostWasConnected=false;return;}
+  if(!hostWasConnected){commandLength=0;hostWasConnected=true;}
+  for(uint8_t budget=32;budget && serialLink.available();--budget){
+    int received=serialLink.read();
+    if(received<0){commandLength=0;break;}
+    char ch=char(received);
+    if(ch=='\r')continue;
     if(ch=='\n'){
-      serialCommand[serialCommandLength]='\0';
-      if(serialCommandLength)handleHistoryCommand(serialCommand);
-      serialCommandLength=0;
-    }else if(serialCommandLength<sizeof(serialCommand)-1)serialCommand[serialCommandLength++]=ch;
-    else serialCommandLength=0;
+      command[commandLength]=0;
+      if(commandLength)handleCommand(command,now);
+      commandLength=0;
+    }else if(commandLength<sizeof(command)-1)command[commandLength++]=ch;
+    else commandLength=0;
+  }
+  if(txAt==txLength){txAt=txLength=0;prepareReply();}
+  if(txAt<txLength){
+    uint8_t count=uint8_t(txLength-txAt);if(count>32)count=32;
+    uint8_t sent=serialLink.writeSome(tx+txAt,count);
+    txAt=uint8_t(txAt+sent);
+    if(sent)serialProgressAt=now;
+    else if(uint32_t(now-serialProgressAt)>=1000)abortReply(); // No partial END marker.
   }
 }
-
-// ================= RESET SQUAT DETECTION =================
-
-void resetSquatDetection() {
-
-  squatDownDetected = false;
-
-  squatDownSamples = 0;
-  squatReturnSamples = 0;
-}
-
-
-// ================= RESET LAT RAISE DETECTION =================
-
-void resetLatRaiseDetection() {
-
-  latRaiseDetected = false;
-
-  latRaiseUpSamples = 0;
-  latRaiseReturnSamples = 0;
-}
-
-
-// ================= END SESSION =================
-
-void endSession() {
-
-  updateSessionClock();
-  exerciseRunning = false;
-  if(!saveCurrentSession())return; // Keep counters available if saving fails.
-  sessionEnded = true;
-
-  // Reset ALL exercise rep counts
-
-  for (int i = 0; i < NUM_EXERCISES; i++) {
-
-    exerciseReps[i] = 0;
-    resetSessionStats(i);
-  }
-
-  lastSquatRepTime = 0;
-  lastLatRaiseRepTime = 0;
-
-  resetSquatDetection();
-  resetLatRaiseDetection();
-
-  safeSerial.println("SESSION ENDED");
-  safeSerial.println("ALL REP COUNTERS RESET");
-}
-
-
-// ================= SQUAT DETECTION =================
-
-void updateSquatCounter() {
-
-  // Only count squats when Squats is selected
-  // and the exercise is running
-
-  if (currentExercise != 0 ||
-      !exerciseRunning ||
-      sessionEnded) {
-
-    resetSquatDetection();
-    return;
-  }
-
-
-  // Detect downward movement
-
-  if (!squatDownDetected) {
-
-    if (z <= SQUAT_DOWN_THRESHOLD) {
-
-      if (squatDownSamples < SQUAT_DOWN_CONFIRM_SAMPLES) {
-        squatDownSamples++;
-      }
-
-    } else {
-
-      squatDownSamples = 0;
-    }
-
-
-    bool cooldownComplete =
-      (lastSquatRepTime == 0) ||
-      (millis() - lastSquatRepTime >= SQUAT_MIN_INTERVAL);
-
-
-    // Confirm squat movement
-
-    if (squatDownSamples >= SQUAT_DOWN_CONFIRM_SAMPLES &&
-        cooldownComplete) {
-
-      squatDownDetected = true;
-
-      squatReturnSamples = 0;
-      squatDownSamples = 0;
-    }
-  }
-
-
-  // Detect return to standing
-
-  else {
-
-    if (z >= SQUAT_RETURN_THRESHOLD) {
-
-      if (squatReturnSamples < SQUAT_RETURN_CONFIRM_SAMPLES) {
-        squatReturnSamples++;
-      }
-
-    } else {
-
-      squatReturnSamples = 0;
-    }
-
-
-    // Count successful squat
-
-    if (squatReturnSamples >= SQUAT_RETURN_CONFIRM_SAMPLES) {
-
-      exerciseReps[0]++;
-
-      lastSquatRepTime = millis();
-
-      squatDownDetected = false;
-
-      squatReturnSamples = 0;
-      squatDownSamples = 0;
-
-      safeSerial.print("Successful squat reps: ");
-      safeSerial.println(exerciseReps[0]);
-    }
-  }
-}
-
-
-// ================= LAT RAISE DETECTION =================
-
-void updateLatRaiseCounter() {
-
-  // Only count lat raises when Lat Raises is selected
-  // and the exercise is running
-
-  if (currentExercise != 1 ||
-      !exerciseRunning ||
-      sessionEnded) {
-
-    resetLatRaiseDetection();
-    return;
-  }
-
-
-  // Detect upward arm movement
-
-  if (!latRaiseDetected) {
-
-    if (y >= LAT_RAISE_UP_THRESHOLD) {
-
-      if (latRaiseUpSamples < LAT_RAISE_UP_CONFIRM_SAMPLES) {
-        latRaiseUpSamples++;
-      }
-
-    } else {
-
-      latRaiseUpSamples = 0;
-    }
-
-
-    // Check cooldown
-
-    bool cooldownComplete =
-      (lastLatRaiseRepTime == 0) ||
-      (millis() - lastLatRaiseRepTime >= LAT_RAISE_MIN_INTERVAL);
-
-
-    // Confirm raised movement
-
-    if (latRaiseUpSamples >= LAT_RAISE_UP_CONFIRM_SAMPLES &&
-        cooldownComplete) {
-
-      latRaiseDetected = true;
-
-      latRaiseReturnSamples = 0;
-      latRaiseUpSamples = 0;
-
-      safeSerial.println("Lat raise movement detected");
-    }
-  }
-
-
-  // Detect return to starting position
-
-  else {
-
-    if (y <= LAT_RAISE_RETURN_THRESHOLD) {
-
-      if (latRaiseReturnSamples < LAT_RAISE_RETURN_CONFIRM_SAMPLES) {
-        latRaiseReturnSamples++;
-      }
-
-    } else {
-
-      latRaiseReturnSamples = 0;
-    }
-
-
-    // Count successful lat raise
-
-    if (latRaiseReturnSamples >= LAT_RAISE_RETURN_CONFIRM_SAMPLES) {
-
-      exerciseReps[1]++;
-
-      lastLatRaiseRepTime = millis();
-
-      latRaiseDetected = false;
-
-      latRaiseReturnSamples = 0;
-      latRaiseUpSamples = 0;
-
-      safeSerial.print("Successful lat raise reps: ");
-      safeSerial.println(exerciseReps[1]);
-    }
-  }
-}
-
-
-// ================= SETUP =================
-
-void setup() {
-
+void setup(){
   Serial.begin(115200);
-
-  pinMode(START_BUTTON, INPUT_PULLUP);
-  pinMode(EXERCISE_BUTTON, INPUT_PULLUP);
-
-  lcd.begin(16, 2);
-  lcd.clear();
-
-  lcd.print("Starting...");
-
+  pinMode(START_BUTTON,INPUT_PULLUP);pinMode(EXERCISE_BUTTON,INPUT_PULLUP);
+  lcd.begin(16,2);lcd.clear();setLine(0,"PART A A2.0");setLine(1,"Starting...");
   Wire.begin();
-
-  if (pulseSensor.begin(Wire, I2C_SPEED_STANDARD)) {
-
-    pulseSensorReady = true;
-
-    pulseSensor.setup();
-
-    pulseSensor.setPulseAmplitudeRed(0x1F);
-    pulseSensor.setPulseAmplitudeIR(0x1F);
-    pulseSensor.setPulseAmplitudeGreen(0);
-
-    safeSerial.println("MAX30102 connected!");
-
-  } else {
-
-    safeSerial.println("MAX30102 not detected!");
+#if defined(ARDUINO_ARCH_RENESAS_UNO) || defined(WIRE_HAS_TIMEOUT)
+  Wire.setWireTimeout(5000,true); // A sensor fault must not wait indefinitely.
+#endif
+  pulseSensorReady=pulseSensor.begin(Wire,I2C_SPEED_STANDARD);
+  if(pulseSensorReady){
+    pulseSensor.setup();pulseSensor.setPulseAmplitudeRed(0x1F);
+    pulseSensor.setPulseAmplitudeIR(0x1F);pulseSensor.setPulseAmplitudeGreen(0);
   }
-
-
-  // Calibrate accelerometer
-
-  lcd.clear();
-  lcd.print("Calibrating...");
-
-  const int samples = 200;
-
-  for (int i = 0; i < samples; i++) {
-
-    gravityX += analogRead(X_PIN);
-    gravityY += analogRead(Y_PIN);
-    gravityZ += analogRead(Z_PIN);
-
-    delay(5);
-  }
-
-  gravityX /= samples;
-  gravityY /= samples;
-  gravityZ /= samples;
-
-
-  // Initialize button states
-
-  startRawState = digitalRead(START_BUTTON);
-  startStableState = startRawState;
-
-  exerciseRawState = digitalRead(EXERCISE_BUTTON);
-  exerciseStableState = exerciseRawState;
-
-  startChangeTime = millis();
-  exerciseChangeTime = millis();
-
-  lcd.clear();
-
-  sessionClockAt=millis();
-  safeSerial.println(F("# DEVICE,part_a,A1.6"));
-  safeSerial.println("System ready!");
+  uint32_t now=millis();resetAttempt(now);calibrationAt=now;
+  startKey.suppress(digitalRead(START_BUTTON)==LOW,now);
+  exerciseKey.suppress(digitalRead(EXERCISE_BUTTON)==LOW,now);
+  renderDisplay(true);
 }
-
-
-// ================= BUTTON 1: START / STOP / END =================
-
-void handleStartButton() {
-
-  unsigned long now = millis();
-
-  bool reading = digitalRead(START_BUTTON);
-
-
-  // Detect physical button changes
-
-  if (reading != startRawState) {
-
-    startRawState = reading;
-    startChangeTime = now;
-  }
-
-
-  // Debounce button
-
-  if (now - startChangeTime >= DEBOUNCE_TIME) {
-
-    if (startStableState != startRawState) {
-
-      startStableState = startRawState;
-
-
-      // BUTTON PRESSED
-
-      if (startStableState == LOW) {
-
-        startPressTime = now;
-        longPressHandled = false;
-
-        safeSerial.println("Start button pressed");
-      }
-
-
-      // BUTTON RELEASED
-
-      else {
-
-        if (!longPressHandled) {
-
-          // Start new session after END
-
-          if (sessionEnded) {
-
-            sessionEnded = false;
-            updateSessionClock();
-            exerciseRunning = true;
-            sessionTouched[currentExercise]=true;
-
-            lastSquatRepTime = 0;
-            lastLatRaiseRepTime = 0;
-
-            resetSquatDetection();
-            resetLatRaiseDetection();
-
-            safeSerial.println("NEW SESSION STARTED");
-          }
-
-
-          // Toggle between RUNNING and STOPPED
-
-          else {
-
-            updateSessionClock();
-            exerciseRunning = !exerciseRunning;
-            if(exerciseRunning)sessionTouched[currentExercise]=true;
-
-            lastSquatRepTime = 0;
-            lastLatRaiseRepTime = 0;
-
-            resetSquatDetection();
-            resetLatRaiseDetection();
-
-
-            if (exerciseRunning) {
-
-              safeSerial.println("EXERCISE STARTED");
-
-            } else {
-
-              safeSerial.println("EXERCISE STOPPED");
-
-              safeSerial.print("Saved reps: ");
-              safeSerial.println(exerciseReps[currentExercise]);
-            }
-          }
-        }
-      }
-    }
-  }
-
-
-  // Detect LONG PRESS
-
-  if (startStableState == LOW &&
-      !longPressHandled &&
-      now - startPressTime >= LONG_PRESS_TIME) {
-
-    longPressHandled = true;
-
-    if (!sessionEnded) {
-
-      endSession();
-    }
-  }
-}
-
-
-// ================= BUTTON 2: SWITCH EXERCISE =================
-
-void handleExerciseButton() {
-
-  unsigned long now = millis();
-
-  bool reading = digitalRead(EXERCISE_BUTTON);
-
-
-  // Detect physical button changes
-
-  if (reading != exerciseRawState) {
-
-    exerciseRawState = reading;
-    exerciseChangeTime = now;
-  }
-
-
-  // Debounce button
-
-  if (now - exerciseChangeTime >= DEBOUNCE_TIME) {
-
-    if (exerciseStableState != exerciseRawState) {
-
-      exerciseStableState = exerciseRawState;
-
-
-      // Switch on release so a two-button erase hold cannot switch first.
-      if(exerciseStableState==LOW)exerciseSwitchArmed=true;
-
-      if (exerciseStableState == HIGH && exerciseSwitchArmed) {
-        exerciseSwitchArmed=false;
-
-        // Do not allow switching while running
-
-        if (!exerciseRunning) {
-
-          updateSessionClock();
-          if(!saveCurrentSession())return;
-          int previousExercise = currentExercise;
-          resetSessionStats(previousExercise);
-
-
-          // Reset exercise being switched FROM
-
-          exerciseReps[previousExercise] = 0;
-
-
-          // Switch to next exercise
-
-          currentExercise++;
-
-          if (currentExercise >= NUM_EXERCISES) {
-
-            currentExercise = 0;
-          }
-
-
-          // Reset detection states
-
-          lastSquatRepTime = 0;
-          lastLatRaiseRepTime = 0;
-
-          resetSquatDetection();
-          resetLatRaiseDetection();
-
-
-          safeSerial.print("Exercise changed to: ");
-          safeSerial.println(exercises[currentExercise]);
-
-          safeSerial.print("Previous exercise rep count reset: ");
-          safeSerial.println(exercises[previousExercise]);
-        }
-
-        else {
-
-          safeSerial.println("Cannot switch exercises while running");
-          safeSerial.println("Press Start button to stop first");
-        }
-      }
-    }
-  }
-}
-
-
-// ================= ACCELEROMETER =================
-
-void updateAccelerometer() {
-
-  if (millis() - lastAccelUpdate >= ACCEL_DELAY) {
-
-    lastAccelUpdate = millis();
-
-    float rawX = analogRead(X_PIN);
-    float rawY = analogRead(Y_PIN);
-    float rawZ = analogRead(Z_PIN);
-
-
-    // Track gravity/baseline component
-
-    gravityX += GRAVITY_ALPHA * (rawX - gravityX);
-    gravityY += GRAVITY_ALPHA * (rawY - gravityY);
-    gravityZ += GRAVITY_ALPHA * (rawZ - gravityZ);
-
-
-    // Calculate movement relative to baseline
-
-    x = rawX - gravityX;
-    y = rawY - gravityY;
-    z = rawZ - gravityZ;
-
-
-    // Update both rep counters
-    // Only the currently selected exercise can count
-
-    updateSquatCounter();
-    updateLatRaiseCounter();
-
-
-    // Keep Serial Monitor X, Y, Z readings
-
-    if(safeSerial.canWrite(48)){ // Optional telemetry must not slow sampling.
-    safeSerial.print("X:");
-    safeSerial.print(x);
-
-    safeSerial.print(" Y:");
-    safeSerial.print(y);
-
-    safeSerial.print(" Z:");
-    safeSerial.println(z);
-    }
-  }
-}
-
-
-// ================= PULSE SENSOR =================
-
-void updatePulseSensor() {
-
-  if (!pulseSensorReady) {
-    return;
-  }
-
-  irValue = pulseSensor.getIR();
-
-  if (irValue < FINGER_THRESHOLD) {
-
-    bpm = 0;
-    averageBPM = 0;
-
-    lastBeat = 0;
-    validRates = 0;
-    rateSpot = 0;
-
-    return;
-  }
-
-  if (checkForBeat(irValue)) {
-
-    long currentTime = millis();
-
-    if (lastBeat != 0) {
-
-      long delta = currentTime - lastBeat;
-
-      float newBPM = 60000.0 / delta;
-
-      if (newBPM >= 40 && newBPM <= 180) {
-
-        bpm = newBPM;
-        recordSessionBeat(newBPM);
-
-        rates[rateSpot] = (byte)bpm;
-
-        rateSpot = (rateSpot + 1) % RATE_SIZE;
-
-        if (validRates < RATE_SIZE) {
-          validRates++;
-        }
-
-        int total = 0;
-
-        for (byte i = 0; i < validRates; i++) {
-          total += rates[i];
-        }
-
-        averageBPM = (float)total / validRates;
-      }
-    }
-
-    lastBeat = currentTime;
-  }
-}
-
-
-// ================= LCD =================
-
-void updateLCD() {
-
-  if (millis() - lastLCDUpdate < LCD_DELAY) {
-    return;
-  }
-
-  lastLCDUpdate = millis();
-
-
-  // TOP ROW: Exercise name
-
-  lcd.setCursor(0, 0);
-  lcd.print("                ");
-
-  lcd.setCursor(0, 0);
-  lcd.print(exercises[currentExercise]);
-
-
-  // STOP means exercise is running
-  // RUN means exercise is stopped or ended
-
-  lcd.setCursor(12, 0);
-  lcd.print("    ");
-
-  lcd.setCursor(12, 0);
-
-  if (exerciseRunning) {
-
-    lcd.print("STOP");
-
-  } else {
-
-    lcd.print("RUN");
-  }
-
-
-  // BOTTOM ROW: Current exercise rep counter
-
-  lcd.setCursor(0, 1);
-  lcd.print("           ");
-
-  lcd.setCursor(0, 1);
-
-  if (currentExercise == 0) {
-
-    lcd.print("Reps: ");
-    lcd.print(exerciseReps[0]);
-
-  } else {
-
-    lcd.print("Reps: ");
-    lcd.print(exerciseReps[1]);
-  }
-
-
-  // Keep space before BPM
-
-  lcd.setCursor(11, 1);
-  lcd.print("  ");
-
-
-  // BPM stays at columns 13-15
-
-  lcd.setCursor(13, 1);
-
-  if (!pulseSensorReady || irValue < FINGER_THRESHOLD || bpm == 0) {
-
-    lcd.print("---");
-
-  } else {
-
-    char bpmText[4];
-
-    snprintf(
-      bpmText,
-      sizeof(bpmText),
-      "%3d",
-      (int)averageBPM
-    );
-
-    lcd.print(bpmText);
-  }
-}
-
-
-// ================= MAIN LOOP =================
-
-void loop() {
-
-  updateSessionClock();
-  readHistoryCommands();
-  if(!handleHistoryButtons()){
-    handleStartButton();
-    handleExerciseButton();
-  }
-
-  updateAccelerometer();
-
-  updatePulseSensor();
-
-  if(historyMenu==HISTORY_NORMAL)updateLCD();
+void loop(){
+  uint32_t now=millis();State previous=session.state;
+  session.tick(now);
+  if(previous!=session.state)resetDetectors();
+  serviceButtons(now);
+  serviceAccelerometer(millis());
+  if(!calibrating)servicePulse(millis());
+  renderDisplay();
+  serviceSerial(millis());
 }

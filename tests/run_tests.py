@@ -34,4 +34,17 @@ with tempfile.TemporaryDirectory() as d:
     # The R4 uses a separate native USB output backend. Compile the actual
     # sketch against its API too; the fake core writer rejects every call.
     subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic','-DARDUINO_ARCH_RENESAS_UNO','-include',str(root/'tests/parta_stubs/Arduino.h'),'-I',str(root/'tests/parta_stubs'),str(root/'tests/parta_tests.cpp'),'-o',str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
+    result=subprocess.run([str(exe),'--emit-history'],check=True,text=True,capture_output=True)
+    print(result.stdout.splitlines()[0])
+    # Exercise the real producer -> CSV exporter -> desktop import path.
+    import sys
+    sys.path[:0]=[str(root/'tools'),str(root/'desktop')]
+    from export_sessions import parse_a_saved, write_csv
+    from evaluation import load_csv
+    rows=[parse_a_saved(line) for line in result.stdout.splitlines() if line.startswith('ASAVED,')]
+    assert len(rows)>=7 and '# END_A_HISTORY' in result.stdout
+    csv_path=Path(d)/'actual_part_a.csv'
+    write_csv(csv_path,rows,part_a=True)
+    imported=load_csv(csv_path)
+    assert len(imported)==len(rows) and all(row['exercise']=='lateral_raises' for row in imported)
+    print('PASS: actual A2 streamed history -> saved CSV -> results app import.')

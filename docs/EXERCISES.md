@@ -2,8 +2,8 @@
 
 | Exercise | Board | Measured result |
 |---|---|---|
-| Squats | Part A A1.4 | Original accelerometer rep count, active time, optional mean accepted BPM |
-| Lateral raises | Part A A1.4 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Squats | Part A A2.0 | Team accelerometer rep criteria, active time, optional mean accepted BPM |
+| Lateral raises | Part A A2.0 | Team accelerometer rep criteria (up threshold 25), active time, optional mean accepted BPM |
 | Wall sit | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
 | Plank | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
 | Chest press | Part B B2.7 | Completed attempts, good reps, active time and calibrated travel |
@@ -12,7 +12,7 @@ The previous experimental WearableMonitor and unimplemented exercise profiles ha
 
 ## Part A
 
-Short START release starts, pauses or resumes. Long START 3 seconds ends/saves, then clears counters as before. EXERCISE selects Squats / Lat Raises only while stopped; a started paused session saves before switching. Twenty completed sessions persist in EEPROM. Serial `history` exports both exercises; `erase CONFIRM` clears saved A history while stopped. The app judges the rep-count goal only; there is no failed-attempt denominator.
+Tap START to begin a 3-second countdown, pause or resume. Hold START 3 seconds to finish/save; DONE retains final counts/time. One START tap at DONE begins a fresh attempt. EXERCISE selects Squats / Lat Raises at READY/DONE. To discard without saving, pause and hold EXERCISE 2 seconds; START confirms, EXERCISE returns. A paused attempt cannot be switched away from accidentally. Twenty combined completed sessions persist in the existing EEPROM format. Serial `history` exports both exercises; `erase CONFIRM` clears saved A history while stopped. The app judges the rep-count goal only; there is no failed-attempt denominator.
 
 To erase A history by buttons in any session state, hold START+EXERCISE for at least 3 seconds until the prompt appears and release both. At the confirmation prompt, tap/release START to erase or EXERCISE to cancel. Counting pauses during the menu and its result display, then the prior running/paused state returns. Current reps/time stay; only completed saved history is erased. Finishing the current attempt afterward can save a new record.
 
