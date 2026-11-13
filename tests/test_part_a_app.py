@@ -25,7 +25,7 @@ class PartAAppTests(unittest.TestCase):
         a=e.evaluate(count(),TARGETS,90,90)
         self.assertEqual(result_label(a,90),'Good - rep target met')
         self.assertNotIn('good_rep_percent',a);self.assertNotIn('consistency_percent',a)
-        self.assertIsNone(a['bpm_avg']);self.assertIn('form quality is not measured',short_feedback(a,90))
+        self.assertIsNone(a['bpm_avg']);self.assertEqual(short_feedback(a,90),'Recorded rep target met.')
         a=e.evaluate(count(reps=3),TARGETS,90,90)
         self.assertEqual(a['remaining_reps'],2);self.assertIn('2 more reps',short_feedback(a,90))
         self.assertEqual(e.evaluate(count(reps=0),TARGETS,90)['status'],'Not good yet')
@@ -84,3 +84,4 @@ class PartAAppTests(unittest.TestCase):
                 with self.assertRaises(FileExistsError):build_report(path,'Synthetic',items,targets,90)
 
 if __name__=='__main__':unittest.main()
+

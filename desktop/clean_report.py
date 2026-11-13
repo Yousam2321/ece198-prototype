@@ -1,5 +1,4 @@
 """Readable, vector-based PDF report. No changes to recorded data or scoring."""
-from datetime import datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -67,7 +66,7 @@ def chart(c, x, top, width, height, values, labels, goal, title, percent=False, 
         c.circle(px,py,2,stroke=0,fill=1)
         previous=(px,py)
     c.setFont('Report',7);c.setFillColor(MUTED)
-    c.drawString(x,top-height+3,'Session number' + (f'  |  dashed goal: {goal:g}' + ('%' if percent else unit) if goal is not None else '  |  informational'))
+    c.drawString(x,top-height+3,'Session number' + (f'  |  dashed goal: {goal:g}' + ('%' if percent else unit) if goal is not None else ''))
 
 
 def _header(c,participant,page,total,exercise,band):
@@ -76,7 +75,9 @@ def _header(c,participant,page,total,exercise,band):
     title=f'{EXERCISES[exercise]}  |  Part A recorded reps' if exercise in COUNT_EXERCISES else 'Chest press  |  80% press / 20% return' if exercise=='chest_press' else f'{EXERCISES[exercise]}  |  target zone +/-{band:g} cm'
     c.setFont('Report-Bold',15);c.drawString(LEFT,HEIGHT-105,title)
     c.setFillColor(MUTED);c.setFont('Report',8)
-    c.drawString(LEFT,25,'ECE198 | Sensor measurements; not a full-body form or medical assessment.')
+    if page==total:
+        c.drawString(LEFT,55,'How to read: compare results with goals; +/- shows change; dashed graph lines mark goals.')
+    c.drawString(LEFT,25,'ECE198 | Exercise results')
     c.drawRightString(WIDTH-LEFT,25,f'{page} / {total}')
 
 
@@ -141,9 +142,8 @@ def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
                 c.showPage()
                 for start in range(0,len(entries),8):
                     page+=1;_header(c,participant,page,total,exercise,band)
-                    top=paragraph(c,f'{EXERCISES[exercise]} history | goal {targets[exercise]:g} recorded reps. Only rep count is assessed.',LEFT,HEIGHT-125,CONTENT)
+                    top=paragraph(c,f'{EXERCISES[exercise]} history | goal {targets[exercise]:g} reps.',LEFT,HEIGHT-125,CONTENT)
                     _table(c,top-15,entries[start:start+8],targets,minimum,rep_minimum,rows)
-                    paragraph(c,'Active time excludes pauses. Mean BPM uses accepted beats during active exercise; no accepted beats means unavailable. BPM and duration do not change the verdict. Part A does not record failed attempts or a good-rep percentage.',LEFT,80,CONTENT,SMALL)
                     c.showPage()
                 continue
             if exercise=='chest_press':
@@ -153,7 +153,6 @@ def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
                     page+=1;_header(c,participant,page,total,exercise,band)
                     top=paragraph(c,f'Chest-press history | goal {targets[exercise]:g} good reps and {rep_minimum:g}% good reps.',LEFT,HEIGHT-125,CONTENT)
                     _table(c,top-15,entries[start:start+8],targets,minimum,rep_minimum,rows)
-                    paragraph(c,'Travel is the distance between the two calibrated positions, not the maximum allowed movement. Percentage = good reps / completed attempts. Different travel settings are shown separately in the table.',LEFT,80,CONTENT,SMALL)
                     c.showPage()
                 continue
             top=paragraph(c,f'Good requires BOTH: at least {targets[exercise]:g}s in the target zone AND {minimum:g}% consistency.',LEFT,HEIGHT-120,CONTENT)
@@ -186,19 +185,11 @@ def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
             top-=30;half=(CONTENT-24)/2
             chart(c,LEFT,top,half,185,[v['in_band_seconds'] for v in scored],[attempt_number(rows,i) for i,_ in entries],targets[exercise],'Time in target zone (s)')
             chart(c,LEFT+half+24,top,half,185,[v['consistency_percent'] for v in scored],[attempt_number(rows,i) for i,_ in entries],minimum,'Consistency (%)',True)
-            top-=215
-            notes=('How to read this report\n'
-                   'Consistency = time in the target zone / assessed duration x 100. Assessed duration excludes pauses and the final continuous departure from the zone. Earlier departures followed by a return still count against consistency.\n'
-                   'Missing echoes or slow sampling can reduce credited time. These measurements cannot assess full exercise form.\n'
-                   'Attempt numbers follow saved history order, not calendar dates. All attempts are assessed with the current confirmed goals; graphs compare only the same exercise and tolerance.\n'
-                   f'Report generated: {datetime.now().strftime("%Y-%m-%d %H:%M")} (computer time). Session dates were not recorded.')
-            paragraph(c,notes,LEFT,top,CONTENT,SMALL)
             c.showPage()
             for start in range(0,len(entries),8):
                 page+=1;_header(c,participant,page,total,exercise,band)
-                top=paragraph(c,f'Attempt history | goal {targets[exercise]:g}s and consistency {minimum:g}%. Same confirmed rules for every attempt.',LEFT,HEIGHT-125,CONTENT)
+                top=paragraph(c,f'Attempt history | goal {targets[exercise]:g}s and consistency {minimum:g}%.',LEFT,HEIGHT-125,CONTENT)
                 _table(c,top-15,entries[start:start+8],targets,minimum,rep_minimum,rows)
-                paragraph(c,'Held time means recorded time inside the calibrated target zone. Unavailable scores are not treated as zero. See the summary page for graphs and definitions.',LEFT,80,CONTENT,SMALL)
                 c.showPage()
         c.save()
     return path
@@ -207,7 +198,7 @@ def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
 def _count_summary(c,rows,entries,targets,minimum,rep_minimum):
     index,row=entries[-1];r=evaluate(row,targets,minimum,rep_minimum)
     exercise=row['exercise']
-    top=paragraph(c,f'Good - rep target met requires at least {targets[exercise]:g} recorded reps. This is a count-only result.',LEFT,HEIGHT-120,CONTENT)
+    top=paragraph(c,f'Goal: at least {targets[exercise]:g} reps.',LEFT,HEIGHT-120,CONTENT)
     top-=23;c.setFillColor(INK);c.setFont('Report-Bold',12)
     c.drawString(LEFT,top,f'Latest {EXERCISES[exercise].lower()} result - Session {attempt_number(rows,index)}')
     c.setFillColor(GREEN if r['status']=='Good' else ORANGE)
@@ -215,7 +206,7 @@ def _count_summary(c,rows,entries,targets,minimum,rep_minimum):
     top=paragraph(c,short_feedback(r,minimum),LEFT,top-32,CONTENT)
     top-=15
     bpm='Unavailable' if r['bpm_avg'] is None else f"{r['bpm_avg']:.1f}"
-    cards=[('Recorded reps / goal',f"{r['rep_count']} / {r['target_reps']:g}"),('Active time',f"{r['active_seconds']:.1f}s"),('Mean accepted BPM',bpm),('Accepted beat samples',str(r['bpm_samples']))]
+    cards=[('Recorded reps / goal',f"{r['rep_count']} / {r['target_reps']:g}"),('Active time',f"{r['active_seconds']:.1f}s"),('Mean BPM',bpm),('Beat samples',str(r['bpm_samples']))]
     for i,(label,value) in enumerate(cards):
         x=LEFT+i*(CONTENT/4);c.setFillColor(LIGHT);c.roundRect(x,top-57,CONTENT/4-6,57,5,stroke=0,fill=1)
         c.setFillColor(MUTED);c.setFont('Report',7);c.drawString(x+8,top-16,label)
@@ -228,13 +219,6 @@ def _count_summary(c,rows,entries,targets,minimum,rep_minimum):
     top-=30;half=(CONTENT-24)/2
     chart(c,LEFT,top,half,185,[v['rep_count'] for v in scored],labels,targets[exercise],'Recorded reps',unit=' reps')
     chart(c,LEFT+half+24,top,half,185,[v['active_seconds'] for v in scored],labels,None,'Active time (s)')
-    top-=215
-    notes=('How to read this report\n'
-           'The original Part A detector counts completed movements that meet its accelerometer thresholds. It does not save failed attempts, movement travel or a full-body form score. A good result here means the rep-count goal was met. No good-rep percentage is calculated.\n'
-           'Active time excludes pauses. Longer sessions are not scored as better. Mean BPM averages accepted beats during active exercise; it is informational and does not change the result. Missing BPM is shown as unavailable.\n'
-           'Graphs compare only this exercise, using current confirmed goals. Session numbers follow saved history order, not calendar dates. Changes to sensor placement or detector thresholds affect comparability.\n'
-           f'Report generated: {datetime.now().strftime("%Y-%m-%d %H:%M")} (computer time). Session dates were not recorded.')
-    paragraph(c,notes,LEFT,top,CONTENT,SMALL)
 
 
 def _rep_summary(c,rows,entries,targets,minimum,rep_minimum):
@@ -261,10 +245,4 @@ def _rep_summary(c,rows,entries,targets,minimum,rep_minimum):
     top-=27;half=(CONTENT-24)/2
     chart(c,LEFT,top,half,165,[v['good_reps'] for v in scored],labels,targets['chest_press'],'Good reps',unit=' reps')
     chart(c,LEFT+half+24,top,half,165,[v['good_rep_percent'] for v in scored],labels,rep_minimum,'Good reps (%)',True)
-    top-=187
-    notes=('How to read this report\n'
-           'Good-rep percentage = good reps / completed attempts x 100. Short attempts stay in the denominator. Incomplete reps discarded on pauses, missing echoes or finish are not included. Zero attempts has no percentage or verdict.\n'
-           'Firmware counts a good rep after reaching 80% of calibrated travel and returning within 20% of the start, with endpoint confirmation. A meaningful short attempt reaches 30% travel and returns without meeting the press criterion. Extra travel is allowed and is not penalized.\n'
-           'Graphs show saved session order, not dates. Comparisons use current confirmed goals. Calibrated travel changes are flagged; these sessions use different movement distances. Measurements do not assess both arms, weights or full exercise posture.\n'
-           f'Report generated: {datetime.now().strftime("%Y-%m-%d %H:%M")} (computer time). Session dates were not recorded.')
-    paragraph(c,notes,LEFT,top,CONTENT,SMALL)
+
