@@ -7,8 +7,8 @@ Existing profiles, history and hold criteria remain in the same local database:
 %LOCALAPPDATA%\ECE198_Results\results.sqlite3
 
 1. Enter a participant label and Open profile.
-2. Open results CSV (Part A, hold or chest exports), or Read Arduino. Close Serial Monitor
-   first. Read Arduino auto-detects A/B, reading both B archives when relevant. Select only
+2. Open results CSV (Part A, hold or chest exports), or Read COM port. Close Serial Monitor
+   first. Read COM port auto-detects A/B, reading both B archives when relevant. Select only
    that participant's records and Keep selected sessions. Duplicate imports skip.
    Older firmware without chest support still supplies its hold records.
 3. Enter targets only for the exercises loaded in this profile. Hold targets use

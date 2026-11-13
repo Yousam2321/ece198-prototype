@@ -75,7 +75,7 @@ class ResultsApp:
         ttk.Button(top,text="Open profile",command=self.open_profile).pack(side="left")
         ttk.Button(top,text="Manage participants",command=self.manage_participants).pack(side="left",padx=8)
         ttk.Button(top,text="Open results CSV",command=self.open_csv).pack(side="right")
-        ttk.Button(top,text="Read Arduino",command=self.read_arduino).pack(side="right",padx=8)
+        ttk.Button(top,text="Read COM port",command=self.read_arduino).pack(side="right",padx=8)
         criteria=ttk.LabelFrame(outer,text="1. Set and confirm criteria",padding=10);criteria.pack(fill="x",pady=12)
         self.wall=tk.StringVar();self.plank=tk.StringVar();self.minimum=tk.StringVar(value="90")
         self.chest=tk.StringVar();self.rep_minimum=tk.StringVar(value="90")
@@ -287,7 +287,7 @@ class ResultsApp:
         if index is None:
             self.attempt_title.set("No attempt selected")
             self.verdict.configure(text="Import results to begin",fg="#3d5870")
-            self.stats.set("Open a CSV or read the Arduino to add results.");self.feedback.set("")
+            self.stats.set("Open a CSV or read a COM port to add results.");self.feedback.set("")
             self.progress_text.set("");return
         self.table.see(str(index))
         row=self.rows[index];counts=row['exercise'] in COUNT_EXERCISES;chest=row['exercise']=='chest_press'
@@ -449,7 +449,7 @@ class ResultsApp:
             import serial.tools.list_ports
             ports=list(serial.tools.list_ports.comports())
         except ImportError:messagebox.showerror("Serial support","The source version needs pyserial. The Windows executable includes it.",parent=self.root);return
-        dialog=tk.Toplevel(self.root);dialog.title("Read saved Arduino sessions");dialog.geometry("570x250");dialog.transient(self.root);dialog.grab_set()
+        dialog=tk.Toplevel(self.root);dialog.title("Read saved sessions from COM port");dialog.geometry("570x250");dialog.transient(self.root);dialog.grab_set()
         ttk.Label(dialog,text="Finish and save the session first. Close Arduino Serial Monitor.\nConnecting may reset the Uno; saved summaries remain.",wraplength=530).pack(anchor="w",padx=16,pady=16)
         port=tk.StringVar(value=ports[0].device if ports else "COM10")
         box=ttk.Combobox(dialog,textvariable=port,values=[p.device for p in ports]);box.pack(anchor="w",padx=16)

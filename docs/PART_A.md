@@ -69,7 +69,7 @@ The blank BPM field means no accepted beats. This example is synthetic. Mean sav
 2. Count 3 squats. Pause for 5 s, resume and do 2 more. Hold START 3 s. The saved row should have 5 reps and active time excluding the pause.
 3. Start another squat session, pause, then press EXERCISE. Check that its row saved before the count cleared. Run/end lateral raises and check a distinct exercise row.
 4. End without any accepted pulse beats: BPM must be unavailable. Repeat with steady finger contact: mean accepted BPM and sample count should be present. Do not grade the exercise using BPM.
-5. Power-cycle **after finishing**, then Read Arduino or export CSV. Completed rows must remain and duplicate imports must skip them.
+5. Power-cycle **after finishing**, then Read COM port or export CSV. Completed rows must remain and duplicate imports must skip them.
 6. Confirm rep goals in the app; test a goal below/equal/above the saved count. Check reasons, same-exercise progression, PDF and evaluated-CSV round trip. B results must still load.
 7. After exporting needed data, try the button erase menu: cancel first and check history remains; then open it again and confirm. Verify the archive empties and the next session has a newer history generation. The app's imported rows remain. The existing Serial `erase CONFIRM` command is still available.
 

@@ -28,7 +28,7 @@ Each Part A record contains exercise, reps, active milliseconds excluding pauses
 Download **ECE198-Results-Windows** from a successful [Build Windows results app](https://github.com/Yousam2321/ece198-prototype/actions/workflows/windows-app.yml) run, extract it, and double-click `dist/ECE198_Results.exe`. No Python installation is needed. Existing participant profiles remain at `%LOCALAPPDATA%\ECE198_Results\results.sqlite3`.
 
 1. Choose a participant label and Open profile.
-2. Open results CSV, or **Read Arduino**. Finish/save first and close Serial Monitor. Select either board's port; the app detects Part A or B. Connect each board separately to import both.
+2. Open results CSV, or **Read COM port**. Finish/save first and close Serial Monitor. Select either board's port; the app detects Part A or B. Connect each board separately to import both.
 3. Keep only that participant's rows. Repeated imports skip identical records.
 4. Enter targets for the loaded exercises, then **Review & confirm**.
 5. Select an attempt for stats and reasons; use View progression, Clean report (PDF), or Export evaluated CSV.
@@ -52,7 +52,7 @@ python -m pip install -r requirements.txt
 python tools/export_sessions.py --port COM10 --output ".\saved_sessions\saved_sessions_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
 ```
 
-Part A is detected automatically; `--part-a` can require it explicitly. On Part B the command above exports holds; add `--reps` for chest-press history. The app's Read Arduino reads both B archives in one connection. The exporter creates the chosen parent folder if needed, never overwrites an existing file, and does not erase the board. Export time is not session time.
+Part A is detected automatically; `--part-a` can require it explicitly. On Part B the command above exports holds; add `--reps` for chest-press history. The app's Read COM port reads both B archives in one connection. The exporter creates the chosen parent folder if needed, never overwrites an existing file, and does not erase the board. Export time is not session time.
 
 At 115200 baud with Newline in Serial Monitor:
 
