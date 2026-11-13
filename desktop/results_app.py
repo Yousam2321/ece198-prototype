@@ -21,6 +21,7 @@ from presentation import result_label, short_feedback, progress_summary
 from report_data import preview_values, export_assessment_csv
 from importing import read_all_history
 from clean_report import build_report
+from criteria_defaults import profile_criteria, DEFAULT_TARGETS
 
 
 def data_directory():
@@ -159,8 +160,17 @@ class ResultsApp:
     def participant_changed(self,*args):
         self.confirmed=False
         if hasattr(self,"table"):
-            self.rows=[];self.refresh_table()
+            self.rows=[]
+            self.load_profile_criteria(self.person.get().strip())
+            self.refresh_table()
             self.status.set("Click Open profile to load this participant, or import their results.")
+
+    def load_profile_criteria(self,name):
+        saved=profile_criteria(self.store.criteria(name) if name else None)
+        for key,var in (("wall_sit",self.wall),("plank",self.plank),("chest_press",self.chest),
+                        ("squats",self.squats),("lateral_raises",self.raises)):
+            var.set(str(saved['targets'][key]))
+        self.minimum.set(str(saved['minimum']));self.rep_minimum.set(str(saved['rep_minimum']))
 
     def criteria(self):
         targets={}
@@ -178,16 +188,7 @@ class ResultsApp:
     def open_profile(self):
         name=self.person.get().strip()
         if not name: return
-        saved=self.store.criteria(name)
-        if saved and 'targets' in saved and 'minimum' in saved:
-            self.wall.set(str(saved["targets"].get("wall_sit","")))
-            self.plank.set(str(saved["targets"].get("plank","")))
-            self.chest.set(str(saved["targets"].get("chest_press","")))
-            self.squats.set(str(saved["targets"].get("squats","")));self.raises.set(str(saved["targets"].get("lateral_raises","")))
-            self.rep_minimum.set(str(saved.get("rep_minimum",90)))
-            self.minimum.set(str(saved["minimum"]))
-        else:
-            self.wall.set("");self.plank.set("");self.chest.set("");self.squats.set("");self.raises.set("");self.minimum.set("90");self.rep_minimum.set("90")
+        self.load_profile_criteria(name)
         self.confirmed=False
         self.rows=self.store.load(name)
         self.refresh_table()
@@ -336,7 +337,7 @@ class ResultsApp:
         count=self.store.delete_participant(name)
         self.people.configure(values=self.store.participants())
         if self.person.get().strip()==name:
-            self.person.set("");self.wall.set("");self.plank.set("");self.chest.set("");self.squats.set("");self.raises.set("");self.minimum.set("90");self.rep_minimum.set("90")
+            self.person.set("")
             self.rows=[];self.confirmed=False;self.refresh_table()
         self.status.set(f"Deleted {name} and {count} local attempt(s). Exported files and Arduino history were kept.")
         return count
@@ -485,6 +486,18 @@ class ResultsApp:
 def smoke_test():
     with tempfile.TemporaryDirectory() as directory:
         root=tk.Tk();root.withdraw();app=ResultsApp(root,Path(directory)/"test.sqlite3")
+        assert app.criteria()==(DEFAULT_TARGETS,90,90) and not app.confirmed
+        # New labels must get defaults immediately, not only at application boot
+        # or after Open profile. Unsaved values from another person must not leak.
+        app.wall.set('123');app.minimum.set('65')
+        app.person.set('New participant');root.update()
+        assert app.criteria()==(DEFAULT_TARGETS,90,90) and not app.confirmed
+        assert app.store.criteria('New participant') is None
+        app.open_profile();assert app.criteria()==(DEFAULT_TARGETS,90,90)
+        app.squats.set('7');app.accept_criteria(*app.criteria())
+        app.person.set('Another participant');assert app.criteria()==(DEFAULT_TARGETS,90,90)
+        app.person.set('New participant');assert app.squats.get()=='7' and not app.confirmed
+        app.store.delete_participant('New participant');app.person.set('Participant 1')
         holds=[]
         for i,(exercise,inside) in enumerate([("wall_sit",18000),("plank",18000),("wall_sit",26000),
                 ("plank",27000),("wall_sit",28000),("plank",26000),("wall_sit",29000),
@@ -499,7 +512,8 @@ def smoke_test():
         app.store.delete_participant('Empty after deletion');app.person.set('Participant 1')
         app.store.add("Participant 1",holds)
         app.store.save_criteria("Participant 1",{'wall_sit':25,'plank':25},90)
-        app.open_profile();assert app.chest.get()=='' and len(app.rows)==10
+        app.open_profile();assert app.chest.get()=='5' and app.wall.get()=='25' and len(app.rows)==10
+        assert app.store.criteria('Participant 1')['targets']=={'wall_sit':25,'plank':25}
         chest=[normalize(dict(session_id=i,exercise='chest_press',active_ms=35000,
                good_reps=good,attempts=attempts,start_cm=20,pressed_cm=end,last_travel_cm=40,history_id=1))
                for i,good,attempts,end in ((1,6,10,50),(2,9,12,54.2),(3,12,12,54.2))]
@@ -521,7 +535,7 @@ def smoke_test():
             if isinstance(w,tk.Toplevel):w.destroy()
         # Import Part A into the same pre-existing B profile. No migration or
         # profile reset is needed; optional BPM and zero counts remain distinct.
-        assert app.squats.get()=='' and app.raises.get()==''
+        assert app.squats.get()=='5' and app.raises.get()=='5'
         part_a=[normalize(dict(session_id=i,exercise=exercise,active_ms=20000+i*1000,
                     reps=reps,bpm_avg=bpm,bpm_samples=4 if bpm else 0,history_id=1))
                 for exercise in COUNT_EXERCISES

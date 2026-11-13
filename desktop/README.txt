@@ -73,3 +73,10 @@ confirm. This removes only that row from this participant's app history. The
 participant and criteria remain, including when the last row is deleted. Reports
 and comparisons use the remaining rows. Arduino saves and existing files are not
 changed. Re-importing a source that contains the row can add it again.
+
+Criteria defaults: every new participant label gets 5-second hold goals,
+5-rep goals (5 good reps for chest press), and 90% percentage requirements.
+Fields remain editable and Review & confirm is still required. Existing saved
+values take precedence; missing/empty fields use the defaults. Switching labels
+reloads that participant's criteria immediately, so another person's edits do
+not leak into the new profile. Defaults are not saved until confirmation.
