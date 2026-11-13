@@ -15,7 +15,7 @@
 #include "HoldTiming.h"
 #include "exercises/ChestPress.h"
 #include "RepSessions.h"
-#define STATION_VERSION "2.6"
+#define STATION_VERSION "2.7"
 #if ENABLE_OLED
 #include <Wire.h>
 #include <U8x8lib.h>

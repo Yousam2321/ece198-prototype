@@ -5,7 +5,7 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
 | `PartA/PartA.ino` — A1.0 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
-| `HoldStation/HoldStation.ino` — B2.6 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
+| `HoldStation/HoldStation.ino` — B2.7 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
 Part A is based on the team's uploaded **working two-exercise sketch**. Its detector functions, thresholds, LCD layout, pin mapping and button timings are preserved. The obsolete `WearableMonitor` implementation has been removed. Part B firmware is unchanged by the Part A integration. LED work remains deferred.
@@ -63,7 +63,9 @@ At 115200 baud with Newline in Serial Monitor:
 
 Part A history uses `ASAVED` rows and an explicit `# END_A_HISTORY` marker. The updated exporter and app support this format; old copies must be updated too. Part A erasure keeps the current RAM counters and the computer's profiles/CSVs. An erase increments archive generation so new records are distinct.
 
-## Part B controls — unchanged B2.6
+## Part B controls — B2.7
+
+B2.7 updates the displayed version label only; exercise and session behaviour remains the same as B2.6.
 
 GO short: start / pause / resume; from DONE, start another calibrated session. GO held at least 1.2 seconds and released while running/paused: finish and save. MODE selects/calibrates while stopped. While paused, hold MODE 2 seconds for Cancel session: GO confirms without saving, MODE returns. Wall sit/plank default to ±10 cm; chest press uses two-point calibration. See [EXERCISES.md](docs/EXERCISES.md).
 

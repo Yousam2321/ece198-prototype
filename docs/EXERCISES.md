@@ -4,9 +4,9 @@
 |---|---|---|
 | Squats | Part A A1.0 | Original accelerometer rep count, active time, optional mean accepted BPM |
 | Lateral raises | Part A A1.0 | Original accelerometer rep count, active time, optional mean accepted BPM |
-| Wall sit | Part B B2.6 | Active/in-band time; final continuous departure for corrected consistency |
-| Plank | Part B B2.6 | Active/in-band time; final continuous departure for corrected consistency |
-| Chest press | Part B B2.6 | Completed attempts, good reps, active time and calibrated travel |
+| Wall sit | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
+| Plank | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
+| Chest press | Part B B2.7 | Completed attempts, good reps, active time and calibrated travel |
 
 The previous experimental WearableMonitor and unimplemented exercise profiles have been removed. Part A uses the team's working two-exercise sketch. See [PART_A.md](PART_A.md) for thresholds and integration details.
 
@@ -34,4 +34,4 @@ To stop without saving: pause, hold MODE **2 seconds**, then GO confirms Cancel 
 
 To erase saved B history: from IDLE/DONE hold both GO+MODE **3 seconds**, release both, then tap GO to confirm or MODE to cancel. Both hold and chest archives are cleared only after confirmation. Keep power connected until completion. The computer's profiles/CSVs remain.
 
-Serial `history` reads up to 20 hold records; `rep_history` reads up to 10 chest records. `version` reports B2.6. The new app reads both B archives in one connection; the PowerShell exporter uses `--reps` for chest records and defaults to holds.
+Serial `history` reads up to 20 hold records; `rep_history` reads up to 10 chest records. `version` reports B2.7. The new app reads both B archives in one connection; the PowerShell exporter uses `--reps` for chest records and defaults to holds.

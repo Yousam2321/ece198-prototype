@@ -245,7 +245,7 @@ int main(){
   Serial.output.clear();showRepHistory();
   assert(Serial.output.find("REPSAVED,1,chest_press,")!=std::string::npos);
 #if ENABLE_OLED
-  updateDisplay();assert(strstr(fakeScreen[0],"CHEST B2.6"));
+  updateDisplay();assert(strstr(fakeScreen[0],"CHEST B2.7"));
   assert(strstr(fakeScreen[2],"Good 3/4"));assert(strstr(fakeScreen[4],"SAVED TO EEPROM"));
   unsigned int fixedChestWrites=fakeOledWrites;
   atDistance(100);updateDisplay();assert(fakeOledWrites==fixedChestWrites);
