@@ -19,9 +19,16 @@ inline uint32_t pulseIn(int,int,uint32_t){return fakePulse;}
 struct FakeSerial {
   void begin(int){}
   std::string output;
+  bool connected=true;int space=64;std::string input;
+  operator bool(){return connected;}
+  int availableForWrite(){return space;}
+  size_t write(uint8_t value){
+    if(!connected || space<1)throw 2;
+    output+=char(value);return 1;
+  }
   void println(){output+='\n';}
-  int available(){return 0;}
-  char read(){return 0;}
+  int available(){return int(input.size());}
+  char read(){char value=input[0];input.erase(0,1);return value;}
   void print(const __FlashStringHelper* p){output+=reinterpret_cast<const char*>(p);}
   template<class T>void print(T value){std::ostringstream s;s<<value;output+=s.str();}
   template<class T>void print(T value,int places){std::ostringstream s;s<<std::fixed<<std::setprecision(places)<<value;output+=s.str();}

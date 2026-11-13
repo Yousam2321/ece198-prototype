@@ -2,8 +2,8 @@
 
 | Exercise | Board | Measured result |
 |---|---|---|
-| Squats | Part A A1.1 | Original accelerometer rep count, active time, optional mean accepted BPM |
-| Lateral raises | Part A A1.1 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Squats | Part A A1.2 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Lateral raises | Part A A1.2 | Original accelerometer rep count, active time, optional mean accepted BPM |
 | Wall sit | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
 | Plank | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
 | Chest press | Part B B2.7 | Completed attempts, good reps, active time and calibrated travel |

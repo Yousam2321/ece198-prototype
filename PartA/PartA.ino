@@ -5,6 +5,8 @@
 #include "heartRate.h"
 #include <EEPROM.h>
 #include "PartASessions.h"
+#include "PartASerial.h"
+PartASerialOutput<decltype(Serial)> safeSerial(Serial);
 
 // ================= LCD =================
 
@@ -198,7 +200,7 @@ bool handleHistoryButtons(){
         historyMenu=HISTORY_CONFIRM;historyArmed=false;
         lcd.clear();lcd.setCursor(0,0);lcd.print(F("ERASE HISTORY?"));
         lcd.setCursor(0,1);lcd.print(F("START=YES EX=NO"));
-        Serial.println(F("A_EVENT,part_a,erase_history_prompt"));
+        safeSerial.println(F("A_EVENT,part_a,erase_history_prompt"));
       }
     }else historyHolding=false;
     if(released)historyMenu=HISTORY_NORMAL;
@@ -213,9 +215,9 @@ bool handleHistoryButtons(){
       if(startReleased){
         bool erased=sessionArchive.clear();
         lcd.print(erased?F("HISTORY CLEARED"):F("ERASE FAILED"));
-        Serial.println(erased?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));
+        safeSerial.println(erased?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));
       }else{
-        lcd.print(F("ERASE CANCELLED"));Serial.println(F("A_EVENT,part_a,erase_cancelled"));
+        lcd.print(F("ERASE CANCELLED"));safeSerial.println(F("A_EVENT,part_a,erase_cancelled"));
       }
       historyMenu=HISTORY_RESULT;historyResultAt=now;
     }
@@ -247,11 +249,11 @@ void recordSessionBeat(float value){
 }
 
 void printPartASaved(const PartASavedSession& r){
-  Serial.print(F("ASAVED,"));Serial.print(r.id);Serial.print(',');
-  Serial.print(r.exercise==0?F("squats"):F("lateral_raises"));Serial.print(',');
-  Serial.print(r.activeMs);Serial.print(',');Serial.print(r.reps);Serial.print(',');
-  if(r.bpmSamples)Serial.print(r.bpmTenths/10.0f,1);
-  Serial.print(',');Serial.print(r.bpmSamples);Serial.print(',');Serial.println(r.historyId);
+  safeSerial.print(F("ASAVED,"));safeSerial.print(r.id);safeSerial.print(',');
+  safeSerial.print(r.exercise==0?F("squats"):F("lateral_raises"));safeSerial.print(',');
+  safeSerial.print(r.activeMs);safeSerial.print(',');safeSerial.print(r.reps);safeSerial.print(',');
+  if(r.bpmSamples)safeSerial.print(r.bpmTenths/10.0f,1);
+  safeSerial.print(',');safeSerial.print(r.bpmSamples);safeSerial.print(',');safeSerial.println(r.historyId);
 }
 
 bool saveCurrentSession(){
@@ -259,26 +261,31 @@ bool saveCurrentSession(){
   PartASavedSession r={0,activeMs[currentExercise],0,uint16_t(exerciseReps[currentExercise]),
     sessionBpmSamples[currentExercise]?uint16_t(sessionBpmSum[currentExercise]/sessionBpmSamples[currentExercise]*10+.5f):uint16_t(0),
     sessionBpmSamples[currentExercise],uint8_t(currentExercise)};
-  if(!sessionArchive.append(r)){Serial.println(F("A_EVENT,part_a,save_failed_counts_kept"));return false;}
+  if(!sessionArchive.append(r)){safeSerial.println(F("A_EVENT,part_a,save_failed_counts_kept"));return false;}
   sessionTouched[currentExercise]=false;printPartASaved(r);
   return true;
 }
 
 void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){Serial.println(F("# DEVICE,part_a,A1.1"));return;}
+  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.2"));return;}
   if(!strcmp(command,"history")){
-    if(exerciseRunning){Serial.println(F("A_EVENT,part_a,pause_before_history"));return;}
-    Serial.println(F("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id"));
+    if(exerciseRunning){safeSerial.println(F("A_EVENT,part_a,pause_before_history"));return;}
+    safeSerial.resetError();
+    safeSerial.println(F("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id"));
     uint32_t latest=sessionArchive.latestId();
-    if(!latest){Serial.println(F("# No saved A sessions"));return;}
+    if(!latest){safeSerial.println(F("# No saved A sessions"));return;}
     uint32_t first=latest>20?latest-19:1;PartASavedSession r;
-    for(uint32_t id=first;;++id){if(sessionArchive.readId(id,r))printPartASaved(r);if(id==latest)break;}
-    Serial.println(F("# END_A_HISTORY"));return;
+    for(uint32_t id=first;;++id){
+      if(sessionArchive.readId(id,r))printPartASaved(r);
+      if(safeSerial.failed())return; // Never mark a partial transfer complete.
+      if(id==latest)break;
+    }
+    safeSerial.println(F("# END_A_HISTORY"));return;
   }
   if(!strcmp(command,"erase CONFIRM") && !exerciseRunning){
-    Serial.println(sessionArchive.clear()?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));return;
+    safeSerial.println(sessionArchive.clear()?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));return;
   }
-  Serial.println(F("A_EVENT,part_a,command_not_available"));
+  safeSerial.println(F("A_EVENT,part_a,command_not_available"));
 }
 
 void readHistoryCommands(){
@@ -338,8 +345,8 @@ void endSession() {
   resetSquatDetection();
   resetLatRaiseDetection();
 
-  Serial.println("SESSION ENDED");
-  Serial.println("ALL REP COUNTERS RESET");
+  safeSerial.println("SESSION ENDED");
+  safeSerial.println("ALL REP COUNTERS RESET");
 }
 
 
@@ -422,8 +429,8 @@ void updateSquatCounter() {
       squatReturnSamples = 0;
       squatDownSamples = 0;
 
-      Serial.print("Successful squat reps: ");
-      Serial.println(exerciseReps[0]);
+      safeSerial.print("Successful squat reps: ");
+      safeSerial.println(exerciseReps[0]);
     }
   }
 }
@@ -478,7 +485,7 @@ void updateLatRaiseCounter() {
       latRaiseReturnSamples = 0;
       latRaiseUpSamples = 0;
 
-      Serial.println("Lat raise movement detected");
+      safeSerial.println("Lat raise movement detected");
     }
   }
 
@@ -512,8 +519,8 @@ void updateLatRaiseCounter() {
       latRaiseReturnSamples = 0;
       latRaiseUpSamples = 0;
 
-      Serial.print("Successful lat raise reps: ");
-      Serial.println(exerciseReps[1]);
+      safeSerial.print("Successful lat raise reps: ");
+      safeSerial.println(exerciseReps[1]);
     }
   }
 }
@@ -545,11 +552,11 @@ void setup() {
     pulseSensor.setPulseAmplitudeIR(0x1F);
     pulseSensor.setPulseAmplitudeGreen(0);
 
-    Serial.println("MAX30102 connected!");
+    safeSerial.println("MAX30102 connected!");
 
   } else {
 
-    Serial.println("MAX30102 not detected!");
+    safeSerial.println("MAX30102 not detected!");
   }
 
 
@@ -588,8 +595,8 @@ void setup() {
   lcd.clear();
 
   sessionClockAt=millis();
-  Serial.println(F("# DEVICE,part_a,A1.1"));
-  Serial.println("System ready!");
+  safeSerial.println(F("# DEVICE,part_a,A1.2"));
+  safeSerial.println("System ready!");
 }
 
 
@@ -627,7 +634,7 @@ void handleStartButton() {
         startPressTime = now;
         longPressHandled = false;
 
-        Serial.println("Start button pressed");
+        safeSerial.println("Start button pressed");
       }
 
 
@@ -652,7 +659,7 @@ void handleStartButton() {
             resetSquatDetection();
             resetLatRaiseDetection();
 
-            Serial.println("NEW SESSION STARTED");
+            safeSerial.println("NEW SESSION STARTED");
           }
 
 
@@ -673,14 +680,14 @@ void handleStartButton() {
 
             if (exerciseRunning) {
 
-              Serial.println("EXERCISE STARTED");
+              safeSerial.println("EXERCISE STARTED");
 
             } else {
 
-              Serial.println("EXERCISE STOPPED");
+              safeSerial.println("EXERCISE STOPPED");
 
-              Serial.print("Saved reps: ");
-              Serial.println(exerciseReps[currentExercise]);
+              safeSerial.print("Saved reps: ");
+              safeSerial.println(exerciseReps[currentExercise]);
             }
           }
         }
@@ -772,17 +779,17 @@ void handleExerciseButton() {
           resetLatRaiseDetection();
 
 
-          Serial.print("Exercise changed to: ");
-          Serial.println(exercises[currentExercise]);
+          safeSerial.print("Exercise changed to: ");
+          safeSerial.println(exercises[currentExercise]);
 
-          Serial.print("Previous exercise rep count reset: ");
-          Serial.println(exercises[previousExercise]);
+          safeSerial.print("Previous exercise rep count reset: ");
+          safeSerial.println(exercises[previousExercise]);
         }
 
         else {
 
-          Serial.println("Cannot switch exercises while running");
-          Serial.println("Press Start button to stop first");
+          safeSerial.println("Cannot switch exercises while running");
+          safeSerial.println("Press Start button to stop first");
         }
       }
     }
@@ -826,14 +833,16 @@ void updateAccelerometer() {
 
     // Keep Serial Monitor X, Y, Z readings
 
-    Serial.print("X:");
-    Serial.print(x);
+    if(safeSerial.canWrite(48)){ // Optional telemetry must not slow sampling.
+    safeSerial.print("X:");
+    safeSerial.print(x);
 
-    Serial.print(" Y:");
-    Serial.print(y);
+    safeSerial.print(" Y:");
+    safeSerial.print(y);
 
-    Serial.print(" Z:");
-    Serial.println(z);
+    safeSerial.print(" Z:");
+    safeSerial.println(z);
+    }
   }
 }
 

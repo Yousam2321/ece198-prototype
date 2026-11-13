@@ -1,6 +1,6 @@
 # Part A — original squats and lateral raises, with saved history
 
-Open `PartA/PartA.ino`; version A1.1. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
+Open `PartA/PartA.ino`; version A1.2. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
 
 ## Detection and controls
 
@@ -9,7 +9,7 @@ Open `PartA/PartA.ino`; version A1.1. Both Uno R3 and Uno R4 Minima builds are c
 - EXERCISE changes modes on release only while stopped and resets the exercise being left; delaying the switch until release prevents a two-button hold from switching first.
 - Analog accelerometer X=A0, Y=A1, Z=A2; 200-sample startup baseline; 25 ms reads; gravity EMA alpha 0.05.
 - Squats: Z ≤ −40 for 3 samples, then Z ≥ −5 for 8 samples. Lateral raises: Y ≥ 20 for 3 samples, then Y ≤ 5 for 8 samples. These are baseline-corrected ADC units, **not degrees**. Existing 1200 ms cooldowns remain.
-- The full squat detector, lateral-raise detector, accelerometer update and LCD update function bodies are unchanged from the supplied sketch.
+- Detector thresholds, confirmation counts and normal LCD layout are preserved. A1.2 routes output through bounded single-byte serial writes and skips optional XYZ telemetry when output space is unavailable; accelerometer sampling and rep detection still run.
 - Original LCD text/layout and rolling mean of up to 5 accepted BPM readings; finger threshold IR ≥50000; accepted beats 40–180 BPM. No SpO2 calculation is added.
 
 ## Pins from the original sketch
@@ -74,3 +74,9 @@ The blank BPM field means no accepted beats. This example is synthetic. Mean sav
 7. After exporting needed data, try the button erase menu: cancel first and check history remains; then open it again and confirm. Verify the archive empties and the next session has a newer history generation. The app's imported rows remain. The existing Serial `erase CONFIRM` command is still available.
 
 Host tests simulate the actual buttons, ADC input and sketch loop. They cannot establish physical rep or pulse accuracy.
+
+## Continue using the board after export
+
+A1.2 adds PartASerial.h. Serial output checks connection and available space before every byte and limits waits to 20 ms. This avoids the R4 USB CDC bulk-write loop, which can wait indefinitely when its FIFO fills after a host stops reading. Optional XYZ telemetry is skipped instead of holding up sampling. Buttons, LCD and EEPROM saving do not require an open host connection. A failed history transfer never sends the completion marker; reopen/retry export instead of accepting a partial CSV.
+
+Finish/save, export from COM6, let the exporter close, then start/pause/resume/finish another session without disconnecting power. Import the new result to verify it saved. This is a user-side hardware check; simulated port-close/stall tests pass but do not prove the cause of every physical freeze.

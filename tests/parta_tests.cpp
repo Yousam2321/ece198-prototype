@@ -91,6 +91,23 @@ int main(){
   assert(!exerciseRunning && !sessionEnded && historyMenu==HISTORY_NORMAL && activeMs[0]==pausedAt);
   assert(memcmp(beforeMenu.bytes,EEPROM.bytes,1024)==0 && exerciseReps[0]==1);
   startPress(200);assert(exerciseRunning);startPress(3200);assert(sessionEnded && sessionArchive.latestId()==1);
+  // Export through the actual command parser, close the host port, and use the
+  // same running sketch again. No reboot/reset is supplied by this test.
+  Serial.output.clear();Serial.input="history\n";advanceA(2);
+  assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
+  Serial.connected=false;Serial.space=0;Serial.output.clear();
+  startPress(200);squat();assert(exerciseRunning && exerciseReps[0]==1);
+  startPress(200);assert(!exerciseRunning);startPress(200);assert(exerciseRunning);
+  startPress(3200);assert(sessionEnded && sessionArchive.latestId()==2 && Serial.output.empty());
+  assert(sessionArchive.readId(2,saved) && saved.reps==1);
+  // An open host that stops reading also cannot trap a byte write forever.
+  Serial.connected=true;safeSerial.resetError();uint32_t blockedAt=fakeNow;
+  safeSerial.print("x");assert(safeSerial.failed() && uint32_t(fakeNow-blockedAt)<=20);
+  Serial.output.clear();Serial.input="history\n";advanceA(1);
+  assert(Serial.output.find("# END_A_HISTORY")==std::string::npos); // No success on partial transfer.
+  Serial.space=64;Serial.input="history\n";Serial.output.clear();advanceA(2);
+  assert(Serial.output.find("ASAVED,2,squats,")!=std::string::npos);
+  assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
   EEPROMClass memory;PartAArchive<EEPROMClass> log(memory);
   for(int i=1;i<=25;++i){PartASavedSession r={0,10000,0,5,0,0,uint8_t(i%2)};assert(log.append(r));}
   assert(!log.readId(5,saved) && log.readId(6,saved) && log.readId(25,saved));
@@ -107,5 +124,5 @@ int main(){
     else assert(erasing.readId(24,saved));
   }
   assert(log.clear());PartASavedSession fresh={0,5000,0,2,800,2,1};assert(log.append(fresh) && fresh.id==1 && fresh.historyId==2);
-  std::cout<<"PASS: A detectors, 3s finish, timing, saves, BPM, button erase/cancel/guards, persistence and interrupted writes\n";
+  std::cout<<"PASS: A detectors, 3s finish, timing, saves, BPM, button erase/cancel/guards, export close/stall recovery, persistence and interrupted writes\n";
 }

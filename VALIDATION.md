@@ -44,3 +44,12 @@ Use [docs/PART_A.md](docs/PART_A.md): compare reps with an observer, pause/resum
 - Portable C++ core, Part B OLED on/off, chest and extended Part A tests pass. No physical board testing was performed.
 - A1.1 local Uno R3 build: 19,110 bytes flash; 1,316 bytes static RAM; 732 bytes left after static allocation. R4 Minima: 67,276 bytes flash; 6,024 bytes static RAM. Both compile successfully with the previously recorded cores/libraries.
 - Detector, accelerometer and normal LCD update function bodies remain unchanged. Existing EEPROM format, serial history/erase commands and desktop compatibility are preserved. Part B and the app's source logic are unchanged.
+
+
+## Participant defaults and A1.2 serial recovery
+
+- Every participant-name change and Open profile loads saved criteria with defaults for missing/empty goals. Startup/deletion use the same path. Defaults are editable 5-second holds, 5-rep goals and 90% requirements; saved custom values are preserved and default loading does not write settings or implicitly confirm them.
+- 46 Python tests pass, including fresh/partial/empty profiles, saved custom criteria, non-mutation and fallback boundaries. Windows GUI checks also switch between new and existing labels, check defaults before Open profile, retain edited goals, require confirmation and preserve database history.
+- Source inspection of Arduino Renesas core 1.6.0 SerialUSB.cpp found a bulk-write loop with no exit when CDC output space remains zero. PartASerial.h avoids this path using available-space checks and single-byte writes, with a 20 ms bounded wait. XYZ output is optional; sampling is not conditional on the connection. History transfers with a write error do not emit a completion marker. This addresses a code-level freeze risk; the reported board still needs a physical post-export check.
+- Actual-sketch tests export via the command parser, close the simulated port, start/count/pause/resume/finish/save without reset, reopen and export again. A connected stalled port times out rather than entering the raw write; partial exports lack the completion marker. All prior B/controller/archive tests pass.
+- A1.2 local builds pass: Uno R3 19,354 bytes flash / 1,335 static RAM; R4 Minima 67,476 bytes flash / 6,040 static RAM. EEPROM and CSV formats remain unchanged.

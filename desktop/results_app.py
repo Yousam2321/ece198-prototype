@@ -496,7 +496,7 @@ def smoke_test():
         app.open_profile();assert app.criteria()==(DEFAULT_TARGETS,90,90)
         app.squats.set('7');app.accept_criteria(*app.criteria())
         app.person.set('Another participant');assert app.criteria()==(DEFAULT_TARGETS,90,90)
-        app.person.set('New participant');assert app.squats.get()=='7' and not app.confirmed
+        app.person.set('New participant');assert float(app.squats.get())==7 and not app.confirmed
         app.store.delete_participant('New participant');app.person.set('Participant 1')
         holds=[]
         for i,(exercise,inside) in enumerate([("wall_sit",18000),("plank",18000),("wall_sit",26000),

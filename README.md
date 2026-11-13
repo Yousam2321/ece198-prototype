@@ -4,7 +4,7 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A1.1 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `PartA/PartA.ino` — A1.2 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
 | `HoldStation/HoldStation.ino` — B2.7 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
@@ -83,3 +83,5 @@ python -m unittest discover -s tests -p 'test_*.py'
 C++ tests require g++. Python tests require `requirements.txt`. CI compiles the firmware and builds/tests the Windows executable. [VALIDATION.md](VALIDATION.md) separates simulated/build checks from physical testing. No physical board is connected to CI; placement, echo quality, motion accuracy and pulse contact still need bench testing.
 
 No license is chosen on the team's behalf. Third-party libraries are installed separately under their own licenses. Participant data and exports are excluded from Git.
+
+Part A A1.2 keeps serial output bounded when the PC closes/stalls its connection, so sampling and controls can continue after export. Update the entire PartA folder, including PartASerial.h. Existing EEPROM records remain compatible.
