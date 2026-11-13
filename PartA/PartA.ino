@@ -279,7 +279,7 @@ bool saveCurrentSession(){
 }
 
 void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.5"));return;}
+  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.6"));return;}
   if(!strcmp(command,"history")){
     if(exerciseRunning){safeSerial.println(F("A_EVENT,part_a,pause_before_history"));return;}
     safeSerial.resetError();
@@ -612,7 +612,7 @@ void setup() {
   lcd.clear();
 
   sessionClockAt=millis();
-  safeSerial.println(F("# DEVICE,part_a,A1.5"));
+  safeSerial.println(F("# DEVICE,part_a,A1.6"));
   safeSerial.println("System ready!");
 }
 

@@ -31,3 +31,7 @@ with tempfile.TemporaryDirectory() as d:
     if __import__('os').name=='nt': exe=exe.with_suffix('.exe')
     subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic','-include',str(root/'tests/parta_stubs/Arduino.h'),'-I',str(root/'tests/parta_stubs'),str(root/'tests/parta_tests.cpp'),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+    # The R4 uses a separate native USB output backend. Compile the actual
+    # sketch against its API too; the fake core writer rejects every call.
+    subprocess.run([compiler,'-std=c++11','-Wall','-Wextra','-pedantic','-DARDUINO_ARCH_RENESAS_UNO','-include',str(root/'tests/parta_stubs/Arduino.h'),'-I',str(root/'tests/parta_stubs'),str(root/'tests/parta_tests.cpp'),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)

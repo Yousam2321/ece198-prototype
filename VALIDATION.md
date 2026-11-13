@@ -1,4 +1,10 @@
-# Validation — Part A A1.5 / Part B B2.7
+# Validation — Part A A1.6 / Part B B2.7
+
+## R4 output transport — A1.6
+
+- User hardware testing reported that controls recover when Serial Monitor opens and freeze when it closes. A1.5 did not resolve the physical freeze. The old output guard still entered the R4 core's potentially unbounded writer after checking space, and invoked its USB-task-polling boolean conversion.
+- The native R4 transport bypasses both calls. It queues a byte directly via TinyUSB with USB IRQs briefly masked, rechecks connection and space inside that guard, restores IRQs on all paths, and only waits for space outside that guard with a 20 ms bound. The R3 path is retained.
+- Compile/run the actual sketch in both serial configurations. The R4 fake rejects every core output/boolean call, models connection loss or FIFO filling between check and submit, and checks immediate return, failure status, restored IRQs and subsequent recovery. Repeated monitor-close/start/pause/resume/save/reopen/export sequences pass in simulation. These tests do not establish a physical fix; the user must repeat the open/close/export check.
 
 ## R4 closed-port input guard — A1.5
 

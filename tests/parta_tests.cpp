@@ -8,6 +8,9 @@ int fakePins[20]={},fakeAnalog[3]={512,512,512};
 FakeSerial Serial;EEPROMClass EEPROM;PartAWire Wire;
 bool fakeSensorPresent=false,fakeBeat=false;
 long fakeIr=0;
+#if defined(ARDUINO_ARCH_RENESAS_UNO)
+bool fakeUsbInterruptsEnabled=true,fakeUsbCloseOnSubmit=false,fakeUsbFullOnSubmit=false;
+#endif
 #include "../PartA/PartA.ino"
 void advanceA(uint32_t ms){for(uint32_t i=0;i<ms;++i){++fakeNow;loop();}}
 void startPress(uint32_t ms){fakePins[START_BUTTON]=LOW;advanceA(ms);fakePins[START_BUTTON]=HIGH;advanceA(70);}
@@ -21,6 +24,9 @@ void openHistoryMenu(){
   assert(historyArmed);
 }
 int main(){
+#if defined(ARDUINO_ARCH_RENESAS_UNO)
+  Serial.rejectCoreWrite=true;Serial.rejectCorePoll=true; // Exercise actual R4 transport selection.
+#endif
   for(int& v:fakePins)v=HIGH;
   setup();assert(sessionArchive.latestId()==0 && !exerciseRunning);
   startPress(200);assert(exerciseRunning && sessionTouched[0]);
@@ -155,6 +161,26 @@ int main(){
   Serial.input=std::string(100,'x');serialCommandLength=0;
   readHistoryCommands();assert(Serial.input.size()==68);
   Serial.input.clear();serialCommandLength=0;
+#if defined(ARDUINO_ARCH_RENESAS_UNO)
+  // Host close or full FIFO between the preliminary check and submission must
+  // return immediately, flag transfer failure, and always restore USB IRQs.
+  safeSerial.resetError();fakeUsbCloseOnSubmit=true;uint32_t racedAt=fakeNow;
+  assert(safeSerial.write('x')==0 && safeSerial.failed());
+  assert(fakeUsbInterruptsEnabled && fakeNow==racedAt);
+  Serial.connected=true;safeSerial.resetError();fakeUsbFullOnSubmit=true;
+  assert(safeSerial.write('x')==0 && safeSerial.failed());
+  assert(fakeUsbInterruptsEnabled && fakeNow==racedAt);
+  Serial.space=64;safeSerial.resetError();assert(safeSerial.write('x')==1);
+  assert(fakeUsbInterruptsEnabled && !safeSerial.failed());
+  for(int cycle=0;cycle<3;++cycle){
+    Serial.connected=false;Serial.space=0;startPress(200);assert(exerciseRunning);
+    startPress(200);assert(!exerciseRunning);startPress(200);assert(exerciseRunning);
+    startPress(3200);assert(sessionEnded);
+    Serial.connected=true;Serial.space=64;Serial.input="history\n";Serial.output.clear();advanceA(2);
+    assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
+    assert(fakeUsbInterruptsEnabled);
+  }
+#endif
   EEPROMClass memory;PartAArchive<EEPROMClass> log(memory);
   for(int i=1;i<=25;++i){PartASavedSession r={0,10000,0,5,0,0,uint8_t(i%2)};assert(log.append(r));}
   assert(!log.readId(5,saved) && log.readId(6,saved) && log.readId(25,saved));

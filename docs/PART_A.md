@@ -94,3 +94,11 @@ A1.4 removes the previous beginning/finished-only restriction. While running, op
 ## Closed-port input guard — A1.5
 
 The R4 USB core can report buffered input after the COM port closes while `read()` returns -1 without consuming that input. A1.5 exits the input loop on a negative read, discards the partial command, and limits each loop pass to 32 input bytes so serial traffic cannot starve controls. A regression reproduces this R4 state, then exercises start, count, pause, resume, finish/save and a second export without a power cycle. The heart-rate sensor remains enabled and the lateral-raise upward threshold remains 25. Hardware confirmation of the reported freeze is still required.
+
+## Native R4 output transport — A1.6
+
+Hardware testing found that opening Serial Monitor restored controls and closing it froze them again. A1.5 did not resolve that behavior. The previous guard still called SerialUSB.write(), whose internal wait is unbounded; its pre-check alone could not guarantee that this call would return. It also used the core's boolean conversion, which runs USB tasks.
+
+On R4, PartASerial.h now checks TinyUSB's connection/queue directly and submits one byte with USB IRQs briefly masked, checking space and connection again inside that guard. Every path restores USB IRQs; no waiting occurs inside the guard. Waiting for output space outside the guard is limited to 20 ms. Part A no longer calls the R4 core writer or its boolean conversion for output. R3 retains the existing UART path. Heart-rate sensing, exercise detectors, controls and EEPROM layout are preserved. This uses the native USB APIs in the tested Arduino Renesas core 1.6.0; no extra library is required.
+
+The actual sketch is tested in both output configurations. The R4 simulation rejects any core writer/boolean call and exercises disconnect/full-buffer races between the preliminary check and submission, ensuring failure returns with USB IRQs restored. Repeated close, start/pause/resume/save, reopen and export cycles pass. Hardware verification is still required: test both buttons with Serial Monitor closed, open/close it three times, then export and immediately use the board without resetting.

@@ -91,3 +91,5 @@ Part A A1.3 merges the uploaded lateral-raise update: the upward Y threshold is 
 Part A A1.4 allows button-confirmed history erase before, during or after an exercise. The menu temporarily pauses counting and preserves the current attempt; cancel preserves all saved history.
 
 Part A A1.5 prevents an endless input loop when the R4 reports buffered serial data but a closed COM port returns no byte. It retains heart-rate sensing, the 25-unit lateral-raise threshold and existing saved records. Physical post-export confirmation is still required.
+
+Part A A1.6 replaces the R4 output transport: it queues bytes directly through TinyUSB instead of calling the R4 core's unbounded writer or USB-task-polling boolean conversion. Waiting for output space stays bounded and outside the USB interrupt guard. Update the whole PartA folder; the app, wiring, sensing thresholds and EEPROM format are unchanged. Verify buttons with Serial Monitor closed and after several open/close/export cycles on the physical R4.

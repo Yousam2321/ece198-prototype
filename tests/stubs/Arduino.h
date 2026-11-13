@@ -21,9 +21,11 @@ struct FakeSerial {
   std::string output;
   bool connected=true;int space=64;std::string input;
   int failedReads=0;uint32_t failedReadAt=0;
-  operator bool(){return connected;}
+  bool rejectCoreWrite=false,rejectCorePoll=false;
+  operator bool(){if(rejectCorePoll)throw 5;return connected;}
   int availableForWrite(){return space;}
   size_t write(uint8_t value){
+    if(rejectCoreWrite)throw 4; // R4 tests must bypass the blocking core writer.
     if(!connected || space<1)throw 2;
     output+=char(value);return 1;
   }
