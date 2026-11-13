@@ -279,7 +279,7 @@ bool saveCurrentSession(){
 }
 
 void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.4"));return;}
+  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.5"));return;}
   if(!strcmp(command,"history")){
     if(exerciseRunning){safeSerial.println(F("A_EVENT,part_a,pause_before_history"));return;}
     safeSerial.resetError();
@@ -301,8 +301,13 @@ void handleHistoryCommand(const char* command){
 }
 
 void readHistoryCommands(){
-  while(Serial.available()){
-    char ch=Serial.read();if(ch=='\r')continue;
+  // R4 available() can stay positive after the host closes the port, while
+  // read() returns -1 without consuming anything. Never spin on that state.
+  // Limit work per loop as well, so incoming traffic cannot starve buttons.
+  for(uint8_t remaining=sizeof(serialCommand);remaining && Serial.available();--remaining){
+    int received=Serial.read();
+    if(received<0){serialCommandLength=0;break;}
+    char ch=char(received);if(ch=='\r')continue;
     if(ch=='\n'){
       serialCommand[serialCommandLength]='\0';
       if(serialCommandLength)handleHistoryCommand(serialCommand);
@@ -607,7 +612,7 @@ void setup() {
   lcd.clear();
 
   sessionClockAt=millis();
-  safeSerial.println(F("# DEVICE,part_a,A1.4"));
+  safeSerial.println(F("# DEVICE,part_a,A1.5"));
   safeSerial.println("System ready!");
 }
 

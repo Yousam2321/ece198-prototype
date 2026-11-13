@@ -134,6 +134,10 @@ int main(){
   Serial.output.clear();Serial.input="history\n";advanceA(2);
   assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
   Serial.connected=false;Serial.space=0;Serial.output.clear();
+  // Reproduce the actual R4 core: available()>0 while a closed port's read()
+  // returns -1 without consuming bytes. The sketch must still service buttons.
+  Serial.input="\r\n";serialCommandLength=3;Serial.failedReads=0;
+  advanceA(1);assert(Serial.failedReads==1 && serialCommandLength==0);
   startPress(200);squat();assert(exerciseRunning && exerciseReps[0]==1);
   startPress(200);assert(!exerciseRunning);startPress(200);assert(exerciseRunning);
   startPress(3200);assert(sessionEnded && sessionArchive.latestId()==2 && Serial.output.empty());
@@ -146,6 +150,11 @@ int main(){
   Serial.space=64;Serial.input="history\n";Serial.output.clear();advanceA(2);
   assert(Serial.output.find("ASAVED,2,squats,")!=std::string::npos);
   assert(Serial.output.find("# END_A_HISTORY")!=std::string::npos);
+  // A long input burst is processed over several loop passes, leaving time for
+  // LCD/keys between chunks rather than draining an unbounded stream at once.
+  Serial.input=std::string(100,'x');serialCommandLength=0;
+  readHistoryCommands();assert(Serial.input.size()==68);
+  Serial.input.clear();serialCommandLength=0;
   EEPROMClass memory;PartAArchive<EEPROMClass> log(memory);
   for(int i=1;i<=25;++i){PartASavedSession r={0,10000,0,5,0,0,uint8_t(i%2)};assert(log.append(r));}
   assert(!log.readId(5,saved) && log.readId(6,saved) && log.readId(25,saved));

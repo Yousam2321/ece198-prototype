@@ -90,3 +90,7 @@ No wiring, app, saved-record format or prior history change is required. Repeat 
 ## Erase at any session state — A1.4
 
 A1.4 removes the previous beginning/finished-only restriction. While running, opening the menu pauses the attempt and returning resumes it; while paused it remains paused. Idle/finished states stay idle/finished. Releasing an insufficient hold returns to the prior state without erasing or saving. Existing archive format and session statistics are preserved.
+
+## Closed-port input guard — A1.5
+
+The R4 USB core can report buffered input after the COM port closes while `read()` returns -1 without consuming that input. A1.5 exits the input loop on a negative read, discards the partial command, and limits each loop pass to 32 input bytes so serial traffic cannot starve controls. A regression reproduces this R4 state, then exercises start, count, pause, resume, finish/save and a second export without a power cycle. The heart-rate sensor remains enabled and the lateral-raise upward threshold remains 25. Hardware confirmation of the reported freeze is still required.

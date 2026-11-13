@@ -20,6 +20,7 @@ struct FakeSerial {
   void begin(int){}
   std::string output;
   bool connected=true;int space=64;std::string input;
+  int failedReads=0;uint32_t failedReadAt=0;
   operator bool(){return connected;}
   int availableForWrite(){return space;}
   size_t write(uint8_t value){
@@ -28,7 +29,15 @@ struct FakeSerial {
   }
   void println(){output+='\n';}
   int available(){return int(input.size());}
-  char read(){char value=input[0];input.erase(0,1);return value;}
+  int read(){
+    // R4 USB can retain available bytes after DTR drops, but read() returns -1.
+    if(!connected || input.empty()){
+      if(failedReadAt!=fakeNow){failedReadAt=fakeNow;failedReads=0;}
+      if(++failedReads>64)throw 3; // Catch a stuck reader instead of hanging tests.
+      return -1;
+    }
+    int value=uint8_t(input[0]);input.erase(0,1);return value;
+  }
   void print(const __FlashStringHelper* p){output+=reinterpret_cast<const char*>(p);}
   template<class T>void print(T value){std::ostringstream s;s<<value;output+=s.str();}
   template<class T>void print(T value,int places){std::ostringstream s;s<<std::fixed<<std::setprecision(places)<<value;output+=s.str();}

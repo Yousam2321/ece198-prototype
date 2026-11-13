@@ -89,3 +89,5 @@ Part A A1.2 keeps serial output bounded when the PC closes/stalls its connection
 Part A A1.3 merges the uploaded lateral-raise update: the upward Y threshold is now 25 instead of 20. Its return threshold stays 5. Saving, erase controls, serial fixes and desktop compatibility are retained.
 
 Part A A1.4 allows button-confirmed history erase before, during or after an exercise. The menu temporarily pauses counting and preserves the current attempt; cancel preserves all saved history.
+
+Part A A1.5 prevents an endless input loop when the R4 reports buffered serial data but a closed COM port returns no byte. It retains heart-rate sensing, the 25-unit lateral-raise threshold and existing saved records. Physical post-export confirmation is still required.

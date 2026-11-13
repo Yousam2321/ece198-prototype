@@ -1,4 +1,10 @@
-# Validation — Part A A1.0 / Part B B2.6
+# Validation — Part A A1.5 / Part B B2.7
+
+## R4 closed-port input guard — A1.5
+
+- Renesas core 1.6.0 can report buffered USB input after disconnect while `read()` returns -1 without consuming it. The previous reader loop could spin indefinitely. The actual-sketch regression reproduces that state and fails on the old reader.
+- The fixed reader exits on a negative read, drops the partial command and processes at most 32 bytes per loop. Tests retain buffered input after export/close, then start, count, pause, resume, finish/save, reconnect and export again. Existing regressions pass; the R4 Minima build uses 67,508 bytes flash and 6,048 bytes static RAM.
+- Heart-rate setup and the lateral-raise upward threshold of 25 are retained. Hardware confirmation of the reported freeze remains necessary.
 
 No physical board is connected to this environment. Builds and simulated inputs do not establish real rep, range or pulse accuracy.
 
