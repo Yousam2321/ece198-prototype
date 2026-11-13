@@ -160,10 +160,7 @@ class ResultsApp:
     def participant_changed(self,*args):
         self.confirmed=False
         if hasattr(self,"table"):
-            self.rows=[]
-            self.load_profile_criteria(self.person.get().strip())
-            self.refresh_table()
-            self.status.set("Click Open profile to load this participant, or import their results.")
+            self.open_profile()
 
     def load_profile_criteria(self,name):
         saved=profile_criteria(self.store.criteria(name) if name else None)
@@ -187,13 +184,15 @@ class ResultsApp:
 
     def open_profile(self):
         name=self.person.get().strip()
-        if not name: return
-        self.load_profile_criteria(name)
         self.confirmed=False
-        self.rows=self.store.load(name)
+        # Switching changes the displayed owner; it never clears stored attempts.
+        # Load the new owner's rows before field traces can redraw the table.
+        self.rows=self.store.load(name) if name else []
+        self.load_profile_criteria(name)
         self.refresh_table()
         self.people.configure(values=self.store.participants())
-        self.status.set(f"{name}: {len(self.rows)} saved attempt(s). Confirm criteria to see evaluations.")
+        self.status.set(f"{name}: {len(self.rows)} saved attempt(s). Confirm criteria to see evaluations."
+                        if name else "Enter a participant label. Saved attempts stay in their own profiles.")
 
     def review_criteria(self):
         if not self.person.get().strip():
@@ -544,6 +543,37 @@ def smoke_test():
         app.store.add('Participant 1',part_a);app.rows=app.store.load('Participant 1')
         app.squats.set('5');app.raises.set('8');app.accept_criteria(*app.criteria());root.update()
         assert len(app.table.get_children())==19
+        # Regression: real import -> switch profiles -> switch back, without
+        # clicking Open profile. Each person's kept attempts must reappear.
+        original_keys=[r['_record_key'] for r in app.rows]
+        other_rows=[normalize(dict(holds[0],session_id=901,in_band_ms=17000)),
+                    normalize(dict(chest[0],session_id=902,good_reps=2,attempts=4))]
+        app.person.set('Participant 2');root.update()
+        assert not app.rows and not app.table.get_children()
+        assert app.criteria()==(DEFAULT_TARGETS,90,90) and not app.confirmed
+        preview=app.preview_import(other_rows,'Synthetic second participant');root.update()
+        keep=next(w for group in preview.winfo_children() for w in group.winfo_children()
+                  if isinstance(w,ttk.Button) and w.cget('text')=='Keep selected sessions')
+        keep.invoke();root.update()
+        assert len(app.rows)==2 and {r['session_id'] for r in app.rows}=={901,902}
+        app.wall.set('7');app.accept_criteria(*app.criteria())
+        app.person.set('Participant 1');root.update()
+        assert [r['_record_key'] for r in app.rows]==original_keys
+        assert len(app.table.get_children())==19 and not app.confirmed
+        assert float(app.chest.get())==10 and float(app.raises.get())==8
+        # Editing criteria must leave the attempts in both profiles intact.
+        app.wall.set('31');assert [r['_record_key'] for r in app.rows]==original_keys
+        app.person.set('Participant 2');root.update()
+        assert {r['session_id'] for r in app.rows}=={901,902} and float(app.wall.get())==7
+        app.person.set('Unused participant');root.update()
+        assert not app.rows and app.criteria()==(DEFAULT_TARGETS,90,90)
+        reopened=ResultStore(app.store.path)
+        assert len(reopened.load('Participant 1'))==19 and len(reopened.load('Participant 2'))==2
+        reopened.close()
+        app.person.set('Participant 1');root.update()
+        assert [r['_record_key'] for r in app.rows]==original_keys and float(app.wall.get())==25
+        app.store.delete_participant('Participant 2') # Synthetic test cleanup only.
+        app.accept_criteria(*app.criteria())
         for exercise in COUNT_EXERCISES:
             index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==1)
             app.table.selection_set(str(index));app.show_selected();root.update()

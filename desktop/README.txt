@@ -80,3 +80,10 @@ Fields remain editable and Review & confirm is still required. Existing saved
 values take precedence; missing/empty fields use the defaults. Switching labels
 reloads that participant's criteria immediately, so another person's edits do
 not leak into the new profile. Defaults are not saved until confirmation.
+
+Participant switching: selecting or typing an existing label automatically loads
+that participant's kept attempts and own saved criteria. New labels show an empty
+attempt list with editable defaults; changing the label or criteria never deletes
+attempts or transfers them to someone else. Open profile can still refresh the
+selected profile manually. CSV/COM previews become permanent only after Keep
+selected sessions. Existing imported attempts remain in the same local database.
