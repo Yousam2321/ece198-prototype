@@ -4,11 +4,11 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A1.0 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `PartA/PartA.ino` — A1.1 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
 | `HoldStation/HoldStation.ino` — B2.7 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
-Part A is based on the team's uploaded **working two-exercise sketch**. Its detector functions, thresholds, LCD layout, pin mapping and button timings are preserved. The obsolete `WearableMonitor` implementation has been removed. Part B firmware is unchanged by the Part A integration. LED work remains deferred.
+Part A is based on the team's uploaded **working two-exercise sketch**. Its detector functions, thresholds, LCD layout, pin mapping and button controls are extended as described below. The obsolete `WearableMonitor` implementation has been removed. Part B firmware is unchanged by the Part A integration. LED work remains deferred.
 
 ## Upload Part A
 
@@ -17,7 +17,7 @@ Part A is based on the team's uploaded **working two-exercise sketch**. Its dete
 3. Select your Part A board and its USB port, then Upload. Builds are checked for Uno R3 and Uno R4 Minima.
 4. Keep the original working wiring. Pin assignments and tests are in [PART_A.md](docs/PART_A.md).
 
-**Original controls:** briefly press/release START to start, pause or resume. Hold START for **1 second** to end. EXERCISE switches Squats / Lat Raises while stopped. A long START is handled while held; Part B has different finish timing.
+**Part A controls:** briefly press/release START to start, pause or resume. Hold START for **3 seconds** to end. Tap/release EXERCISE to switch Squats / Lat Raises while stopped. A long START is handled while held; Part B has different finish timing.
 
 **Added:** END saves before the original code clears the counts. Switching away from a started, paused exercise also saves before clearing it. Pausing alone does not finish/save a session. An unused exercise is not saved. The latest **20 Part A summaries** survive power cycles; newer saves replace the oldest. Unfinished RAM sessions are lost when power is removed. No automatic recovery or session calendar dates are claimed.
 
@@ -61,7 +61,7 @@ At 115200 baud with Newline in Serial Monitor:
 | Part A | `version`, `history`, `erase CONFIRM` (history/erase only while stopped) |
 | Part B | `help`, `version`, `history`, `rep_history`; button instructions below |
 
-Part A history uses `ASAVED` rows and an explicit `# END_A_HISTORY` marker. The updated exporter and app support this format; old copies must be updated too. Part A erasure keeps the current RAM counters and the computer's profiles/CSVs. An erase increments archive generation so new records are distinct.
+Part A history uses `ASAVED` rows and an explicit `# END_A_HISTORY` marker. The updated exporter and app support this format; old copies must be updated too. For button-only Part A erase, finish/save first, hold START+EXERCISE for 3 seconds, then release both. At ERASE HISTORY?, tap/release START to confirm or EXERCISE to cancel. Running/paused attempts cannot open this menu. The result stays visible for 2 seconds. Serial erasure keeps the current RAM counters; both erase methods leave computer profiles/CSVs unchanged. An erase increments archive generation so new records are distinct.
 
 ## Part B controls — B2.7
 

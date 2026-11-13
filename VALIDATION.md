@@ -34,3 +34,13 @@ Previously reported user bench checks included stopwatch accuracy, pause/resume,
 ## Remaining physical checks
 
 Use [docs/PART_A.md](docs/PART_A.md): compare reps with an observer, pause/resume timing, finish and mode-switch saves, optional BPM contact, completed-session power cycle, A/B app reading, CSV/PDF round trip and intentional history erase. Compare source and board versions/ports before uploading. Export any needed records before ring replacement or intentional erasure.
+
+
+## Part A A1.1 — button-confirmed history erase
+
+- START finish/save is now 3 seconds. EXERCISE switches on release, allowing the two-button chord to be consumed before a mode switch.
+- Before starting or after finishing, START+EXERCISE held 3 seconds opens the LCD erase confirmation. Both must be released before a separate START confirm or EXERCISE cancel. Running/paused attempts cannot open the menu; their chords do not finish/save/pause/switch.
+- Actual-sketch loop tests check subthreshold holds, either button pressed first, holding/releasing the opening chord, simultaneous confirmation inputs, cancellation with byte-identical EEPROM, successful clear and generation change, reboot reads, running/paused guards and normal subsequent finish/save. LCD assertions check the prompt and outcomes.
+- Portable C++ core, Part B OLED on/off, chest and extended Part A tests pass. No physical board testing was performed.
+- A1.1 local Uno R3 build: 19,110 bytes flash; 1,316 bytes static RAM; 732 bytes left after static allocation. R4 Minima: 67,276 bytes flash; 6,024 bytes static RAM. Both compile successfully with the previously recorded cores/libraries.
+- Detector, accelerometer and normal LCD update function bodies remain unchanged. Existing EEPROM format, serial history/erase commands and desktop compatibility are preserved. Part B and the app's source logic are unchanged.

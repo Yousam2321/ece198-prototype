@@ -17,7 +17,7 @@ const int START_BUTTON = 2;
 const int EXERCISE_BUTTON = 3;
 
 const unsigned long DEBOUNCE_TIME = 50;
-const unsigned long LONG_PRESS_TIME = 1000;
+const unsigned long LONG_PRESS_TIME = 3000; // Finish/save: hold START for 3 seconds.
 
 // Button 1
 bool startRawState = HIGH;
@@ -30,6 +30,7 @@ bool longPressHandled = false;
 bool exerciseRawState = HIGH;
 bool exerciseStableState = HIGH;
 unsigned long exerciseChangeTime = 0;
+bool exerciseSwitchArmed = false;
 
 
 // ================= EXERCISES =================
@@ -139,8 +140,7 @@ const unsigned long LCD_DELAY = 250;
 
 
 // ================= ADDED: HISTORY AND EXPORT =================
-// Detection thresholds, confirmation samples, pin mapping and button timing
-// below are unchanged from the supplied working sketch.
+// Detection thresholds, confirmation samples and pin mapping are unchanged.
 PartAArchive<EEPROMClass> sessionArchive(EEPROM);
 uint32_t activeMs[NUM_EXERCISES]={0,0};
 bool sessionTouched[NUM_EXERCISES]={false,false};
@@ -149,6 +149,85 @@ uint16_t sessionBpmSamples[NUM_EXERCISES]={0,0};
 uint32_t sessionClockAt=0;
 char serialCommand[32];
 uint8_t serialCommandLength=0;
+
+// The existing buttons also open a protected history menu. Debounce this
+// separately so a two-button hold cannot leak into the normal button handlers.
+struct HistoryKey {
+  bool raw=HIGH,stable=HIGH;
+  uint32_t changedAt=0;
+  bool update(bool reading,uint32_t now){
+    if(reading!=raw){raw=reading;changedAt=now;}
+    if(uint32_t(now-changedAt)>=DEBOUNCE_TIME && stable!=raw){
+      stable=raw;return stable==HIGH; // An action requires a fresh release.
+    }
+    return false;
+  }
+};
+enum HistoryMenu : uint8_t { HISTORY_NORMAL,HISTORY_CHORD,HISTORY_CONFIRM,HISTORY_RESULT };
+HistoryMenu historyMenu=HISTORY_NORMAL;
+HistoryKey historyStart,historyExercise;
+bool historyEligible=false,historyHolding=false,historyArmed=false;
+uint32_t historyHoldAt=0,historyResultAt=0;
+
+void consumeHistoryButtons(bool start,bool exercise,uint32_t now){
+  startRawState=start;startStableState=start;startChangeTime=now;
+  exerciseRawState=exercise;exerciseStableState=exercise;exerciseChangeTime=now;
+  longPressHandled=true;exerciseSwitchArmed=false;
+}
+
+bool handleHistoryButtons(){
+  uint32_t now=millis();
+  bool start=digitalRead(START_BUTTON),exercise=digitalRead(EXERCISE_BUTTON);
+  bool startReleased=historyStart.update(start,now);
+  bool exerciseReleased=historyExercise.update(exercise,now);
+  bool both=start==LOW && exercise==LOW;
+  bool released=start==HIGH && exercise==HIGH && historyStart.stable==HIGH && historyExercise.stable==HIGH;
+  if(historyMenu==HISTORY_NORMAL){
+    if(!both)return false;
+    historyMenu=HISTORY_CHORD;historyHolding=false;
+    historyEligible=!exerciseRunning;
+    for(int i=0;i<NUM_EXERCISES;++i)if(sessionTouched[i])historyEligible=false;
+  }
+  // Consume all chord/menu transitions, including the final release. Neither
+  // the opening hold nor simultaneous confirmation presses can erase history.
+  consumeHistoryButtons(start,exercise,now);
+  if(historyMenu==HISTORY_CHORD){
+    if(both && historyStart.stable==LOW && historyExercise.stable==LOW){
+      if(!historyHolding){historyHolding=true;historyHoldAt=now;}
+      if(historyEligible && uint32_t(now-historyHoldAt)>=3000){
+        historyMenu=HISTORY_CONFIRM;historyArmed=false;
+        lcd.clear();lcd.setCursor(0,0);lcd.print(F("ERASE HISTORY?"));
+        lcd.setCursor(0,1);lcd.print(F("START=YES EX=NO"));
+        Serial.println(F("A_EVENT,part_a,erase_history_prompt"));
+      }
+    }else historyHolding=false;
+    if(released)historyMenu=HISTORY_NORMAL;
+    return true;
+  }
+  if(historyMenu==HISTORY_CONFIRM){
+    if(!historyArmed){if(released)historyArmed=true;return true;}
+    if(both){historyArmed=false;return true;}
+    if((startReleased && exercise==HIGH && historyExercise.stable==HIGH) ||
+       (exerciseReleased && start==HIGH && historyStart.stable==HIGH)){
+      lcd.clear();lcd.setCursor(0,0);
+      if(startReleased){
+        bool erased=sessionArchive.clear();
+        lcd.print(erased?F("HISTORY CLEARED"):F("ERASE FAILED"));
+        Serial.println(erased?F("A_EVENT,part_a,history_cleared"):F("A_EVENT,part_a,erase_failed"));
+      }else{
+        lcd.print(F("ERASE CANCELLED"));Serial.println(F("A_EVENT,part_a,erase_cancelled"));
+      }
+      historyMenu=HISTORY_RESULT;historyResultAt=now;
+    }
+    return true;
+  }
+  // Keep confirmation visible, then return to the original LCD without turning
+  // a held confirmation button into a new exercise/start action.
+  if(released && uint32_t(now-historyResultAt)>=2000){
+    historyMenu=HISTORY_NORMAL;lcd.clear();lastLCDUpdate=0;
+  }
+  return true;
+}
 
 void updateSessionClock(){
   uint32_t now=millis();
@@ -186,7 +265,7 @@ bool saveCurrentSession(){
 }
 
 void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){Serial.println(F("# DEVICE,part_a,A1.0"));return;}
+  if(!strcmp(command,"version")){Serial.println(F("# DEVICE,part_a,A1.1"));return;}
   if(!strcmp(command,"history")){
     if(exerciseRunning){Serial.println(F("A_EVENT,part_a,pause_before_history"));return;}
     Serial.println(F("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id"));
@@ -509,7 +588,7 @@ void setup() {
   lcd.clear();
 
   sessionClockAt=millis();
-  Serial.println(F("# DEVICE,part_a,A1.0"));
+  Serial.println(F("# DEVICE,part_a,A1.1"));
   Serial.println("System ready!");
 }
 
@@ -653,9 +732,11 @@ void handleExerciseButton() {
       exerciseStableState = exerciseRawState;
 
 
-      // Switch once when button is pressed
+      // Switch on release so a two-button erase hold cannot switch first.
+      if(exerciseStableState==LOW)exerciseSwitchArmed=true;
 
-      if (exerciseStableState == LOW) {
+      if (exerciseStableState == HIGH && exerciseSwitchArmed) {
+        exerciseSwitchArmed=false;
 
         // Do not allow switching while running
 
@@ -910,13 +991,14 @@ void loop() {
 
   updateSessionClock();
   readHistoryCommands();
-  handleStartButton();
-
-  handleExerciseButton();
+  if(!handleHistoryButtons()){
+    handleStartButton();
+    handleExerciseButton();
+  }
 
   updateAccelerometer();
 
   updatePulseSensor();
 
-  updateLCD();
+  if(historyMenu==HISTORY_NORMAL)updateLCD();
 }

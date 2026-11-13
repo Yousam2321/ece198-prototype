@@ -2,8 +2,8 @@
 
 | Exercise | Board | Measured result |
 |---|---|---|
-| Squats | Part A A1.0 | Original accelerometer rep count, active time, optional mean accepted BPM |
-| Lateral raises | Part A A1.0 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Squats | Part A A1.1 | Original accelerometer rep count, active time, optional mean accepted BPM |
+| Lateral raises | Part A A1.1 | Original accelerometer rep count, active time, optional mean accepted BPM |
 | Wall sit | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
 | Plank | Part B B2.7 | Active/in-band time; final continuous departure for corrected consistency |
 | Chest press | Part B B2.7 | Completed attempts, good reps, active time and calibrated travel |
@@ -12,7 +12,9 @@ The previous experimental WearableMonitor and unimplemented exercise profiles ha
 
 ## Part A
 
-Short START release starts, pauses or resumes. Long START 1 second ends/saves, then clears counters as before. EXERCISE selects Squats / Lat Raises only while stopped; a started paused session saves before switching. Twenty completed sessions persist in EEPROM. Serial `history` exports both exercises; `erase CONFIRM` clears saved A history while stopped. The app judges the rep-count goal only; there is no failed-attempt denominator.
+Short START release starts, pauses or resumes. Long START 3 seconds ends/saves, then clears counters as before. EXERCISE selects Squats / Lat Raises only while stopped; a started paused session saves before switching. Twenty completed sessions persist in EEPROM. Serial `history` exports both exercises; `erase CONFIRM` clears saved A history while stopped. The app judges the rep-count goal only; there is no failed-attempt denominator.
+
+To erase A history by buttons, finish/save first, hold START+EXERCISE for 3 seconds and release both. At the confirmation prompt, tap/release START to erase or EXERCISE to cancel. Running/paused sessions cannot enter this menu.
 
 ## Part B wall sit / plank
 

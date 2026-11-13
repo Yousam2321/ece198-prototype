@@ -1,12 +1,12 @@
 # Part A — original squats and lateral raises, with saved history
 
-Open `PartA/PartA.ino`; version A1.0. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
+Open `PartA/PartA.ino`; version A1.1. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
 
-## What stays the same
+## Detection and controls
 
 - START D2 and EXERCISE D3, active-low with INPUT_PULLUP; 50 ms debounce.
-- Short START release starts/pauses/resumes. Holding START 1000 ms ends while held.
-- EXERCISE changes modes only while stopped and resets the exercise being left.
+- Short START release starts/pauses/resumes. Holding START 3000 ms ends while held (extended from the original 1 second).
+- EXERCISE changes modes on release only while stopped and resets the exercise being left; delaying the switch until release prevents a two-button hold from switching first.
 - Analog accelerometer X=A0, Y=A1, Z=A2; 200-sample startup baseline; 25 ms reads; gravity EMA alpha 0.05.
 - Squats: Z ≤ −40 for 3 samples, then Z ≥ −5 for 8 samples. Lateral raises: Y ≥ 20 for 3 samples, then Y ≤ 5 for 8 samples. These are baseline-corrected ADC units, **not degrees**. Existing 1200 ms cooldowns remain.
 - The full squat detector, lateral-raise detector, accelerometer update and LCD update function bodies are unchanged from the supplied sketch.
@@ -29,12 +29,22 @@ Keep the existing working power and LCD contrast wiring. The sketch does not est
 |---|---|
 | START from stopped | Runs/resumes the original counter; active duration accumulates |
 | Short START while running | Pauses; reps/time retained; no EEPROM write |
-| Long START ≥1 s | Saves the started session, then performs the original END/reset |
+| Long START ≥3 s | Saves the started session, then performs the original END/reset |
 | EXERCISE while paused after starting | Saves the exercise being left, then performs the original switch/reset |
 | EXERCISE in a never-started mode | Switches without an empty archive entry |
 | Power off | Completed summaries remain; unfinished RAM session is lost |
 
 Saving failure prints `A_EVENT,part_a,save_failed_counts_kept`, pauses the exercise and keeps its counters for retry; it does not silently claim success. The original END LCD still resets its rep display, so inspect the saved summary through the app or Serial.
+
+## Erase history with the existing buttons
+
+1. Finish/save the current session, or remain in a never-started mode.
+2. Hold START + EXERCISE together for 3 seconds. Either button may be pressed first.
+3. The LCD shows `ERASE HISTORY?` / `START=YES EX=NO`. Release both buttons completely.
+4. Tap/release START to erase all saved A history, or tap/release EXERCISE to cancel.
+5. `HISTORY CLEARED`, `ERASE CANCELLED` or `ERASE FAILED` stays visible for 2 seconds, then the normal LCD returns.
+
+The opening hold/release cannot confirm deletion. Pressing both buttons again while confirming requires another complete release before a separate choice. Chords are ignored during running/paused attempts and never start, switch, finish or save them. Only the board's saved history is cleared; exported files and imported app profiles remain. Normal START alone still needs 3 seconds to finish/save. No new hardware is needed.
 
 ## EEPROM and structured protocol
 
@@ -56,11 +66,11 @@ The blank BPM field means no accepted beats. This example is synthetic. Mean sav
 ## Bench tests
 
 1. Start with the original mounting; verify both detectors still count the same controlled movements.
-2. Count 3 squats. Pause for 5 s, resume and do 2 more. Hold START 1 s. The saved row should have 5 reps and active time excluding the pause.
+2. Count 3 squats. Pause for 5 s, resume and do 2 more. Hold START 3 s. The saved row should have 5 reps and active time excluding the pause.
 3. Start another squat session, pause, then press EXERCISE. Check that its row saved before the count cleared. Run/end lateral raises and check a distinct exercise row.
 4. End without any accepted pulse beats: BPM must be unavailable. Repeat with steady finger contact: mean accepted BPM and sample count should be present. Do not grade the exercise using BPM.
 5. Power-cycle **after finishing**, then Read Arduino or export CSV. Completed rows must remain and duplicate imports must skip them.
 6. Confirm rep goals in the app; test a goal below/equal/above the saved count. Check reasons, same-exercise progression, PDF and evaluated-CSV round trip. B results must still load.
-7. Only after exporting needed data, use `erase CONFIRM`; verify the archive empties and the next session has a newer history generation. The app's imported rows remain.
+7. After exporting needed data, try the button erase menu: cancel first and check history remains; then open it again and confirm. Verify the archive empties and the next session has a newer history generation. The app's imported rows remain. The existing Serial `erase CONFIRM` command is still available.
 
 Host tests simulate the actual buttons, ADC input and sketch loop. They cannot establish physical rep or pulse accuracy.
