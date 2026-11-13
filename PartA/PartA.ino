@@ -77,9 +77,9 @@ unsigned long lastSquatRepTime = 0;
 
 // ================= LAT RAISE DETECTION =================
 
-// Y-axis thresholds based on your wrist data
+// Updated team data: higher upward threshold to reduce false counts.
 
-const float LAT_RAISE_UP_THRESHOLD = 20.0;
+const float LAT_RAISE_UP_THRESHOLD = 25.0;
 const float LAT_RAISE_RETURN_THRESHOLD = 5.0;
 
 const byte LAT_RAISE_UP_CONFIRM_SAMPLES = 3;
@@ -267,7 +267,7 @@ bool saveCurrentSession(){
 }
 
 void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.2"));return;}
+  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.3"));return;}
   if(!strcmp(command,"history")){
     if(exerciseRunning){safeSerial.println(F("A_EVENT,part_a,pause_before_history"));return;}
     safeSerial.resetError();
@@ -595,7 +595,7 @@ void setup() {
   lcd.clear();
 
   sessionClockAt=millis();
-  safeSerial.println(F("# DEVICE,part_a,A1.2"));
+  safeSerial.println(F("# DEVICE,part_a,A1.3"));
   safeSerial.println("System ready!");
 }
 

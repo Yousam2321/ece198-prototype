@@ -1,6 +1,6 @@
 # Part A — original squats and lateral raises, with saved history
 
-Open `PartA/PartA.ino`; version A1.2. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
+Open `PartA/PartA.ino`; version A1.3. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
 
 ## Detection and controls
 
@@ -8,8 +8,8 @@ Open `PartA/PartA.ino`; version A1.2. Both Uno R3 and Uno R4 Minima builds are c
 - Short START release starts/pauses/resumes. Holding START 3000 ms ends while held (extended from the original 1 second).
 - EXERCISE changes modes on release only while stopped and resets the exercise being left; delaying the switch until release prevents a two-button hold from switching first.
 - Analog accelerometer X=A0, Y=A1, Z=A2; 200-sample startup baseline; 25 ms reads; gravity EMA alpha 0.05.
-- Squats: Z ≤ −40 for 3 samples, then Z ≥ −5 for 8 samples. Lateral raises: Y ≥ 20 for 3 samples, then Y ≤ 5 for 8 samples. These are baseline-corrected ADC units, **not degrees**. Existing 1200 ms cooldowns remain.
-- Detector thresholds, confirmation counts and normal LCD layout are preserved. A1.2 routes output through bounded single-byte serial writes and skips optional XYZ telemetry when output space is unavailable; accelerometer sampling and rep detection still run.
+- Squats: Z ≤ −40 for 3 samples, then Z ≥ −5 for 8 samples. Lateral raises: Y ≥ 25 for 3 samples, then Y ≤ 5 for 8 samples. These are baseline-corrected ADC units, **not degrees**. Existing 1200 ms cooldowns remain.
+- The revised team sketch raises the lateral-raise upward threshold from 20 to 25. Return threshold, confirmation counts, squat detection and normal LCD layout are preserved. A1.2 routes output through bounded single-byte serial writes and skips optional XYZ telemetry when output space is unavailable; accelerometer sampling and rep detection still run.
 - Original LCD text/layout and rolling mean of up to 5 accepted BPM readings; finger threshold IR ≥50000; accepted beats 40–180 BPM. No SpO2 calculation is added.
 
 ## Pins from the original sketch
@@ -80,3 +80,9 @@ Host tests simulate the actual buttons, ADC input and sketch loop. They cannot e
 A1.2 adds PartASerial.h. Serial output checks connection and available space before every byte and limits waits to 20 ms. This avoids the R4 USB CDC bulk-write loop, which can wait indefinitely when its FIFO fills after a host stops reading. Optional XYZ telemetry is skipped instead of holding up sampling. Buttons, LCD and EEPROM saving do not require an open host connection. A failed history transfer never sends the completion marker; reopen/retry export instead of accepting a partial CSV.
 
 Finish/save, export from COM6, let the exporter close, then start/pause/resume/finish another session without disconnecting power. Import the new result to verify it saved. This is a user-side hardware check; simulated port-close/stall tests pass but do not prove the cause of every physical freeze.
+
+## Revised lateral-raise data — A1.3
+
+The supplied ECE_198_with_lat_raises(1).ino has one functional difference from the earlier team sketch: LAT_RAISE_UP_THRESHOLD changes from 20.0 to 25.0. A1.3 merges that value into the integrated sketch, retaining the 3-second finish/save hold, button-confirmed erase, EEPROM/CSV/app compatibility and bounded serial output. The return threshold remains 5.0, with 3 upward and 8 return samples and the existing 1200 ms cooldown. These are baseline-relative ADC units, not degrees.
+
+No wiring, app, saved-record format or prior history change is required. Repeat a controlled lateral raise using the team's original mounting; compare counted reps with an observer. Whether the revised value reduces real false counts must be checked on the board.

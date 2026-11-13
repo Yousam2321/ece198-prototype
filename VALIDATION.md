@@ -53,3 +53,12 @@ Use [docs/PART_A.md](docs/PART_A.md): compare reps with an observer, pause/resum
 - Source inspection of Arduino Renesas core 1.6.0 SerialUSB.cpp found a bulk-write loop with no exit when CDC output space remains zero. PartASerial.h avoids this path using available-space checks and single-byte writes, with a 20 ms bounded wait. XYZ output is optional; sampling is not conditional on the connection. History transfers with a write error do not emit a completion marker. This addresses a code-level freeze risk; the reported board still needs a physical post-export check.
 - Actual-sketch tests export via the command parser, close the simulated port, start/count/pause/resume/finish/save without reset, reopen and export again. A connected stalled port times out rather than entering the raw write; partial exports lack the completion marker. All prior B/controller/archive tests pass.
 - A1.2 local builds pass: Uno R3 19,354 bytes flash / 1,335 static RAM; R4 Minima 67,476 bytes flash / 6,040 static RAM. EEPROM and CSV formats remain unchanged.
+
+
+## Part A A1.3 — revised lateral-raise threshold
+
+- Compared the newly uploaded ECE_198_with_lat_raises(1).ino against the earlier team sketch. Its only functional change is LAT_RAISE_UP_THRESHOLD from 20.0 to 25.0; return threshold, timing, detectors, pins and LCD are otherwise the same.
+- Merge that value into A1.2 and update the device version to A1.3. Keep existing save-before-reset/switch, 3-second finish, button-confirmed erase, CRC history, structured export and bounded serial output. Part B and the app are unchanged.
+- The actual-sketch ADC test now includes a shallow Y excursion that triggered the old threshold but does not yield three qualifying samples with the revised threshold and baseline tracking. It also checks a brief spike is ignored and a complete raise/return still counts and saves. Existing controller/archive/serial recovery regressions pass.
+- Both local builds pass with unchanged usage: Uno R3 19,354 bytes flash / 1,335 bytes static RAM; R4 Minima 67,476 bytes flash / 6,040 bytes static RAM.
+- Physical rep accuracy and reduction in false counts remain user-side tests with consistent mounting. No new app upload or EEPROM erase is required.

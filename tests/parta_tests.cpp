@@ -37,7 +37,16 @@ int main(){
   startPress(200);assert(!exerciseRunning);exercisePress();
   assert(currentExercise==1 && exerciseReps[0]==0 && sessionArchive.latestId()==2);
   assert(reboot.readId(2,saved) && saved.exercise==0 && saved.reps==1 && saved.bpmSamples==0);
-  startPress(200);latRaise();assert(exerciseReps[1]==1);
+  startPress(200);
+  // A shallow Y excursion used to satisfy the old 20-unit threshold. With the
+  // uploaded 25-unit threshold, baseline tracking leaves fewer than 3 qualifying
+  // readings, so returning must not produce a rep. Exercise the real ADC loop.
+  fakeAnalog[Y_PIN]=540;advanceA(250);fakeAnalog[Y_PIN]=512;advanceA(350);
+  assert(exerciseReps[1]==0 && !latRaiseDetected);
+  // A brief spike also must not become a rep; a full raise/return still counts.
+  fakeAnalog[Y_PIN]=612;advanceA(50);fakeAnalog[Y_PIN]=512;advanceA(350);
+  assert(exerciseReps[1]==0 && !latRaiseDetected);
+  latRaise();assert(exerciseReps[1]==1);
   startPress(200);exercisePress();assert(currentExercise==0 && sessionArchive.latestId()==3);
   assert(reboot.readId(3,saved) && saved.exercise==1 && saved.reps==1);
   // Save failure pauses and keeps the counts; a retry saves once.
