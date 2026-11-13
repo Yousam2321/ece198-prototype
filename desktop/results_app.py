@@ -578,7 +578,7 @@ def smoke_test():
             index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==1)
             app.table.selection_set(str(index));app.show_selected();root.update()
             assert app.verdict.cget('text')=='Not good yet - rep count'
-            assert 'Unavailable' in app.stats.get() and 'form quality is not measured' in app.feedback.get()
+            assert 'Unavailable' in app.stats.get() and 'more reps.' in app.feedback.get()
             index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==3)
             app.table.selection_set(str(index));app.show_selected();root.update()
             assert app.verdict.cget('text')=='Good - rep target met' and '75.1' in app.stats.get()
