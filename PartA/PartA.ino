@@ -168,8 +168,19 @@ struct HistoryKey {
 enum HistoryMenu : uint8_t { HISTORY_NORMAL,HISTORY_CHORD,HISTORY_CONFIRM,HISTORY_RESULT };
 HistoryMenu historyMenu=HISTORY_NORMAL;
 HistoryKey historyStart,historyExercise;
-bool historyEligible=false,historyHolding=false,historyArmed=false;
+bool historyResumeRunning=false,historyHolding=false,historyArmed=false;
 uint32_t historyHoldAt=0,historyResultAt=0;
+
+void updateSessionClock();
+void resetSquatDetection();
+void resetLatRaiseDetection();
+
+void leaveHistoryMenu(){
+  updateSessionClock(); // Exclude the whole menu, including result feedback.
+  resetSquatDetection();resetLatRaiseDetection();
+  exerciseRunning=historyResumeRunning;historyResumeRunning=false;
+  historyMenu=HISTORY_NORMAL;lcd.clear();lastLCDUpdate=0;
+}
 
 void consumeHistoryButtons(bool start,bool exercise,uint32_t now){
   startRawState=start;startStableState=start;startChangeTime=now;
@@ -187,8 +198,9 @@ bool handleHistoryButtons(){
   if(historyMenu==HISTORY_NORMAL){
     if(!both)return false;
     historyMenu=HISTORY_CHORD;historyHolding=false;
-    historyEligible=!exerciseRunning;
-    for(int i=0;i<NUM_EXERCISES;++i)if(sessionTouched[i])historyEligible=false;
+    updateSessionClock();historyResumeRunning=exerciseRunning;
+    exerciseRunning=false; // Menu available in every session state.
+    resetSquatDetection();resetLatRaiseDetection();
   }
   // Consume all chord/menu transitions, including the final release. Neither
   // the opening hold nor simultaneous confirmation presses can erase history.
@@ -196,14 +208,14 @@ bool handleHistoryButtons(){
   if(historyMenu==HISTORY_CHORD){
     if(both && historyStart.stable==LOW && historyExercise.stable==LOW){
       if(!historyHolding){historyHolding=true;historyHoldAt=now;}
-      if(historyEligible && uint32_t(now-historyHoldAt)>=3000){
+      if(uint32_t(now-historyHoldAt)>=3000){
         historyMenu=HISTORY_CONFIRM;historyArmed=false;
         lcd.clear();lcd.setCursor(0,0);lcd.print(F("ERASE HISTORY?"));
         lcd.setCursor(0,1);lcd.print(F("START=YES EX=NO"));
         safeSerial.println(F("A_EVENT,part_a,erase_history_prompt"));
       }
     }else historyHolding=false;
-    if(released)historyMenu=HISTORY_NORMAL;
+    if(released)leaveHistoryMenu();
     return true;
   }
   if(historyMenu==HISTORY_CONFIRM){
@@ -226,7 +238,7 @@ bool handleHistoryButtons(){
   // Keep confirmation visible, then return to the original LCD without turning
   // a held confirmation button into a new exercise/start action.
   if(released && uint32_t(now-historyResultAt)>=2000){
-    historyMenu=HISTORY_NORMAL;lcd.clear();lastLCDUpdate=0;
+    leaveHistoryMenu();
   }
   return true;
 }
@@ -267,7 +279,7 @@ bool saveCurrentSession(){
 }
 
 void handleHistoryCommand(const char* command){
-  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.3"));return;}
+  if(!strcmp(command,"version")){safeSerial.println(F("# DEVICE,part_a,A1.4"));return;}
   if(!strcmp(command,"history")){
     if(exerciseRunning){safeSerial.println(F("A_EVENT,part_a,pause_before_history"));return;}
     safeSerial.resetError();
@@ -595,7 +607,7 @@ void setup() {
   lcd.clear();
 
   sessionClockAt=millis();
-  safeSerial.println(F("# DEVICE,part_a,A1.3"));
+  safeSerial.println(F("# DEVICE,part_a,A1.4"));
   safeSerial.println("System ready!");
 }
 

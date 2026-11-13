@@ -1,6 +1,6 @@
 # Part A — original squats and lateral raises, with saved history
 
-Open `PartA/PartA.ino`; version A1.3. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
+Open `PartA/PartA.ino`; version A1.4. Both Uno R3 and Uno R4 Minima builds are checked. The uploaded working sketch is preserved in the first Part A branch commit, before integration edits.
 
 ## Detection and controls
 
@@ -38,13 +38,13 @@ Saving failure prints `A_EVENT,part_a,save_failed_counts_kept`, pauses the exerc
 
 ## Erase history with the existing buttons
 
-1. Finish/save the current session, or remain in a never-started mode.
-2. Hold START + EXERCISE together for 3 seconds. Either button may be pressed first.
+1. This menu is available before, during or after an exercise, including while paused.
+2. Hold START + EXERCISE together for at least 3 seconds, until the prompt appears. Either button may be pressed first. Counting pauses as soon as the chord is detected.
 3. The LCD shows `ERASE HISTORY?` / `START=YES EX=NO`. Release both buttons completely.
 4. Tap/release START to erase all saved A history, or tap/release EXERCISE to cancel.
-5. `HISTORY CLEARED`, `ERASE CANCELLED` or `ERASE FAILED` stays visible for 2 seconds, then the normal LCD returns.
+5. `HISTORY CLEARED`, `ERASE CANCELLED` or `ERASE FAILED` stays visible for 2 seconds, then the normal LCD and prior running/paused state return.
 
-The opening hold/release cannot confirm deletion. Pressing both buttons again while confirming requires another complete release before a separate choice. Chords are ignored during running/paused attempts and never start, switch, finish or save them. Only the board's saved history is cleared; exported files and imported app profiles remain. Normal START alone still needs 3 seconds to finish/save. No new hardware is needed.
+The opening hold/release cannot confirm deletion. Pressing both buttons again while confirming requires another complete release before a separate choice. The menu never starts, switches, finishes or saves an attempt. Menu time is excluded from active time. Current reps, active duration and accepted-beat statistics are retained; an incomplete movement must restart after the pause. Confirm erases saved history only, so finishing the current attempt later can add a new saved row. Cancelling leaves EEPROM byte-for-byte unchanged. Only the board's saved history is cleared; exported files and imported app profiles remain. Normal START alone still needs 3 seconds to finish/save. No new hardware is needed.
 
 ## EEPROM and structured protocol
 
@@ -86,3 +86,7 @@ Finish/save, export from COM6, let the exporter close, then start/pause/resume/f
 The supplied ECE_198_with_lat_raises(1).ino has one functional difference from the earlier team sketch: LAT_RAISE_UP_THRESHOLD changes from 20.0 to 25.0. A1.3 merges that value into the integrated sketch, retaining the 3-second finish/save hold, button-confirmed erase, EEPROM/CSV/app compatibility and bounded serial output. The return threshold remains 5.0, with 3 upward and 8 return samples and the existing 1200 ms cooldown. These are baseline-relative ADC units, not degrees.
 
 No wiring, app, saved-record format or prior history change is required. Repeat a controlled lateral raise using the team's original mounting; compare counted reps with an observer. Whether the revised value reduces real false counts must be checked on the board.
+
+## Erase at any session state — A1.4
+
+A1.4 removes the previous beginning/finished-only restriction. While running, opening the menu pauses the attempt and returning resumes it; while paused it remains paused. Idle/finished states stay idle/finished. Releasing an insufficient hold returns to the prior state without erasing or saving. Existing archive format and session statistics are preserved.

@@ -51,7 +51,7 @@ jobs:
         run: arduino-cli compile --fqbn arduino:avr:uno --build-property compiler.cpp.extra_flags=-DENABLE_OLED=0 --build-path build/serial HoldStation
       - uses: actions/upload-artifact@v4
         with:
-          name: ECE198-Complete-Project-A1.3-B2.7
+          name: ECE198-Complete-Project-A1.4-B2.7
           path: |
             HoldStation/
             PartA/

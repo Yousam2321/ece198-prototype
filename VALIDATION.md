@@ -62,3 +62,11 @@ Use [docs/PART_A.md](docs/PART_A.md): compare reps with an observer, pause/resum
 - The actual-sketch ADC test now includes a shallow Y excursion that triggered the old threshold but does not yield three qualifying samples with the revised threshold and baseline tracking. It also checks a brief spike is ignored and a complete raise/return still counts and saves. Existing controller/archive/serial recovery regressions pass.
 - Both local builds pass with unchanged usage: Uno R3 19,354 bytes flash / 1,335 bytes static RAM; R4 Minima 67,476 bytes flash / 6,040 bytes static RAM.
 - Physical rep accuracy and reduction in false counts remain user-side tests with consistent mounting. No new app upload or EEPROM erase is required.
+
+
+## Part A A1.4 — history erase in every session state
+
+- Remove the beginning/finished-only button-menu gate. Capture the previous running state and pause the current attempt as soon as a two-button chord starts; preserve reps, active time, touched state and accepted-beat statistics. Exclude menu/result time, reset incomplete detector phases and restore the previous running/paused state when leaving. Short aborted holds also return without saving or clearing history.
+- Actual-sketch tests cover menu cancel during a partial lateral raise without crediting it across the pause; early-aborted holds while running; running cancel with byte-identical EEPROM; running clear with retained count and resumed state; paused cancel/clear with unchanged active time/count; and subsequently saving the preserved attempt under the new archive generation. Existing idle/finished confirmation, accidental-confirmation, persistence, serial close/stall and B regressions pass.
+- Both local builds pass: Uno R3 19,370 bytes flash / 1,335 bytes static RAM; R4 Minima 67,492 bytes flash / 6,048 bytes static RAM. Archive/CSV formats and app compatibility remain unchanged.
+- This supersedes A1.1's restriction on opening the menu while running/paused. Only saved history is erased; finishing the still-current attempt later can add a new saved row. Physical testing remains the user's check.

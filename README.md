@@ -4,7 +4,7 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A1.3 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `PartA/PartA.ino` — A1.4 | Squats, lateral raises | Original analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
 | `HoldStation/HoldStation.ino` — B2.7 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
@@ -61,7 +61,7 @@ At 115200 baud with Newline in Serial Monitor:
 | Part A | `version`, `history`, `erase CONFIRM` (history/erase only while stopped) |
 | Part B | `help`, `version`, `history`, `rep_history`; button instructions below |
 
-Part A history uses `ASAVED` rows and an explicit `# END_A_HISTORY` marker. The updated exporter and app support this format; old copies must be updated too. For button-only Part A erase, finish/save first, hold START+EXERCISE for 3 seconds, then release both. At ERASE HISTORY?, tap/release START to confirm or EXERCISE to cancel. Running/paused attempts cannot open this menu. The result stays visible for 2 seconds. Serial erasure keeps the current RAM counters; both erase methods leave computer profiles/CSVs unchanged. An erase increments archive generation so new records are distinct.
+Part A history uses `ASAVED` rows and an explicit `# END_A_HISTORY` marker. The updated exporter and app support this format; old copies must be updated too. For button-only Part A erase at any session state, hold START+EXERCISE for at least 3 seconds until the prompt appears, then release both. At ERASE HISTORY?, tap/release START to confirm or EXERCISE to cancel. The current attempt pauses during the menu; its reps/time remain. After 2-second result feedback, a running attempt resumes and a paused attempt stays paused. Only saved history is cleared; finishing the current attempt later can add a new record. Serial erasure keeps the current RAM counters; both erase methods leave computer profiles/CSVs unchanged. An erase increments archive generation so new records are distinct.
 
 ## Part B controls — B2.7
 
@@ -87,3 +87,5 @@ No license is chosen on the team's behalf. Third-party libraries are installed s
 Part A A1.2 keeps serial output bounded when the PC closes/stalls its connection, so sampling and controls can continue after export. Update the entire PartA folder, including PartASerial.h. Existing EEPROM records remain compatible.
 
 Part A A1.3 merges the uploaded lateral-raise update: the upward Y threshold is now 25 instead of 20. Its return threshold stays 5. Saving, erase controls, serial fixes and desktop compatibility are retained.
+
+Part A A1.4 allows button-confirmed history erase before, during or after an exercise. The menu temporarily pauses counting and preserves the current attempt; cancel preserves all saved history.
