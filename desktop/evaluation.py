@@ -228,7 +228,7 @@ class ResultStore:
                 self.db.execute('INSERT OR IGNORE INTO settings VALUES (?,?)',(participant,'{}'))
         return count
     def symptom_counts(self, participant):
-        return dict(self.db.execute("SELECT exercise,count FROM symptom_reports WHERE participant=?", (participant,)))
+        return dict(self.db.execute("SELECT exercise,count FROM symptom_reports WHERE participant=? ORDER BY exercise", (participant,)))
     def pending_symptoms(self, snapshot):
         if not snapshot:
             return {}

@@ -1,5 +1,5 @@
 /*
- * ECE198 Part A A2.0 -- explicit session controller, as used by Part B.
+ * ECE198 Part A A2.1 -- explicit session controller, as used by Part B.
  * Arduino Uno R4 Minima. Existing wiring and exercise criteria are retained.
  * START D2 -> GND; EXERCISE D3 -> GND (INPUT_PULLUP).
  * MMA7361: X=A0, Y=A1, Z=A2. LCD: RS=7, E=8, data=9,10,11,12.
@@ -8,6 +8,7 @@
  * START tap: start 3s countdown / pause / resume / next attempt after DONE.
  * START hold 3s: finish/save once. EXERCISE tap at READY/DONE: next exercise.
  * EXERCISE hold 2s while paused: cancel confirmation (START yes, EXERCISE no).
+ * Confirmed cancellation asks about symptoms and can save a report by exercise.
  * Both hold 3s: erase-history confirmation in any state; release, then choose.
  * Normal use is silent on serial. Commands: version, history, status,
  * erase CONFIRM (while not running). CSV/EEPROM format matches A1.x.
@@ -24,10 +25,11 @@
 #include <stdio.h>
 #include <string.h>
 #if defined(ARDUINO_ARCH_AVR)
-#error "Part A A2.0 targets the Uno R4 Minima. Select that board; Part B uses the Uno R3."
+#error "Part A targets the Uno R4 Minima. Select that board; Part B uses the Uno R3."
 #endif
 
 using namespace parta;
+#define PART_A_VERSION "A2.1"
 const uint8_t START_BUTTON=2, EXERCISE_BUTTON=3;
 const uint8_t X_PIN=A0,Y_PIN=A1,Z_PIN=A2;
 LiquidCrystal lcd(7,8,9,10,11,12);
@@ -59,11 +61,12 @@ uint8_t rates[5]={},rateSpot=0,validRates=0;
 
 // Menus pause the session without changing the attempt or saved archive.
 // The original state is restored only after the menu/result has finished.
-enum Menu : uint8_t { NORMAL, ERASE_HOLD, ERASE_CONFIRM, CANCEL_CONFIRM, NOTICE };
+enum Menu : uint8_t { NORMAL, ERASE_HOLD, ERASE_CONFIRM, CANCEL_CONFIRM, SYMPTOM_PROMPT, SYMPTOM_RESULT, NOTICE };
 Menu menu=NORMAL;
 State menuReturnState=IDLE;
 Key menuStart,menuExercise;
 bool menuArmed=false,chordTiming=false;
+bool symptomSaved=false;
 uint32_t menuAt=0,chordAt=0,noticeAt=0;
 const char* noticeTop="";
 const char* noticeBottom="";
@@ -78,6 +81,7 @@ uint8_t replyPhase=0,txLength=0,txAt=0;
 char tx[144],command[32];
 uint8_t commandLength=0;
 uint32_t exportFirst=0,exportLast=0,exportNext=0,exportGeneration=0,serialProgressAt=0;
+PartASymptoms exportSymptoms={};
 bool hostWasConnected=false,serialEraseSucceeded=false;
 
 const char* exerciseName(){return currentExercise==0?"squats":"lateral_raises";}
@@ -171,12 +175,21 @@ void serviceButtons(uint32_t now){
       if(menu==ERASE_CONFIRM){
         renderDisplay(true);
         bool ok=eraseSavedHistory();
-        showNotice(ok?"HISTORY CLEARED":"ERASE FAILED","Attempt kept",millis());
-      }else{
+        showNotice(ok?"HISTORY CLEARED":"ERASE FAILED",ok?"Unwell: 0":"Attempt kept",millis());
+      }else if(menu==CANCEL_CONFIRM){
+        // Discard the workout before collecting its optional symptom report.
         resetAttempt(now);menuReturnState=IDLE;
-        showNotice("NOT SAVED","Attempt cancelled",now);
+        menu=SYMPTOM_PROMPT;menuArmed=false;
+      }else if(menu==SYMPTOM_PROMPT){
+        abortReply();
+        symptomSaved=sessionArchive.addSymptom(currentExercise);
+        menu=SYMPTOM_RESULT;menuArmed=false;
       }
-    }else if(no!=NO_KEY)showNotice("CANCELLED",menu==ERASE_CONFIRM?"History kept":"Attempt kept",now);
+    }else if(no!=NO_KEY){
+      if(menu==SYMPTOM_PROMPT)showNotice("NOT SAVED","Attempt cancelled",now);
+      else if(menu==SYMPTOM_RESULT)leaveMenu(now);
+      else showNotice("CANCELLED",menu==ERASE_CONFIRM?"History kept":"Attempt kept",now);
+    }
     return;
   }
   KeyEvent goEvent=startKey.update(go,now,3000);
@@ -299,10 +312,15 @@ void renderDisplay(bool force){
   if(calibrating){strcpy(top,"Calibrating...");strcpy(bottom,"Keep sensor still");}
   else if(menu==ERASE_CONFIRM){strcpy(top,"ERASE HISTORY?");strcpy(bottom,"GO:yes EX:no");}
   else if(menu==CANCEL_CONFIRM){strcpy(top,"CANCEL ATTEMPT?");strcpy(bottom,"GO:yes EX:no");}
+  else if(menu==SYMPTOM_PROMPT){strcpy(top,"Feeling unwell?");strcpy(bottom,"GO:yes EX:no");}
+  else if(menu==SYMPTOM_RESULT){
+    strcpy(top,symptomSaved?"Report saved":"Report failed");
+    snprintf(bottom,sizeof(bottom),"Unwell %lu EX",(unsigned long)sessionArchive.symptoms().total());
+  }
   else if(menu==NOTICE){strcpy(top,noticeTop);strcpy(bottom,noticeBottom);}
   else if(menu==ERASE_HOLD){strcpy(top,"Hold both 3 sec");strcpy(bottom,"History menu...");}
   else if(session.state==IDLE){
-    snprintf(top,sizeof(top),"%s A2.0 READY",screenName());strcpy(bottom,"GO:start EX:next");
+    snprintf(top,sizeof(top),"%s " PART_A_VERSION " READY",screenName());strcpy(bottom,"GO:start EX:next");
   }else if(session.state==COUNTDOWN){
     uint32_t elapsed=uint32_t(now-session.countdownAt);
     uint8_t seconds=elapsed>=3000?0:uint8_t(3-elapsed/1000);
@@ -345,19 +363,21 @@ void handleCommand(const char* value,uint32_t now){
     }
     exportLast=sessionArchive.latestId();exportFirst=exportLast>20?exportLast-19:1;
     exportNext=exportFirst;exportGeneration=sessionArchive.historyId();
+    exportSymptoms=sessionArchive.symptoms();
     return;
   }
   if(!strcmp(value,"erase CONFIRM") && !calibrating && menu==NORMAL &&
       session.state!=RUNNING && session.state!=COUNTDOWN && session.state!=SAVING){
     enterMenu(NOTICE,now);
     serialEraseSucceeded=eraseSavedHistory();
-    showNotice(serialEraseSucceeded?"HISTORY CLEARED":"ERASE FAILED","Attempt kept",millis());
+    showNotice(serialEraseSucceeded?"HISTORY CLEARED":"ERASE FAILED",
+      serialEraseSucceeded?"Unwell: 0":"Attempt kept",millis());
     beginReply(ERASE_REPLY,millis());return;
   }
   beginReply(NO_REPLY,now);queueLine("A_EVENT,part_a,command_not_available\n");
 }
 void prepareReply(){
-  if(reply==VERSION_REPLY){queueLine("# DEVICE,part_a,A2.0\n");reply=NO_REPLY;}
+  if(reply==VERSION_REPLY){queueLine("# DEVICE,part_a," PART_A_VERSION "\n");reply=NO_REPLY;}
   else if(reply==STATUS_REPLY){
     snprintf(tx,sizeof(tx),"A_STATUS,%s,%s,%lu,%u,%u,%u,%u\n",exerciseName(),stateName(session.state),
       (unsigned long)session.active,repCount,pulseSensorReady?1:0,
@@ -371,11 +391,15 @@ void prepareReply(){
     }
     if(replyPhase==0){
       queueLine("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id\n");replyPhase=1;
+    }else if(replyPhase==1){
+      snprintf(tx,sizeof(tx),"A_UNWELL,%lu,%u,%u\n",(unsigned long)exportGeneration,
+        unsigned(exportSymptoms.squats),unsigned(exportSymptoms.lateralRaises));
+      txLength=uint8_t(strlen(tx));txAt=0;replyPhase=2;
     }else if(!exportLast){queueLine("# No saved A sessions\n");reply=NO_REPLY;}
-    else if(replyPhase==1){
+    else if(replyPhase==2){
       PartASavedSession r;
       uint32_t id=exportNext; // At most one record search per main-loop pass.
-      if(id==exportLast)replyPhase=2;else ++exportNext;
+      if(id==exportLast)replyPhase=3;else ++exportNext;
       if(sessionArchive.readId(id,r))queueSaved(r);
     }else{queueLine("# END_A_HISTORY\n");reply=NO_REPLY;}
   }
@@ -408,7 +432,7 @@ void serviceSerial(uint32_t now){
 void setup(){
   Serial.begin(115200);
   pinMode(START_BUTTON,INPUT_PULLUP);pinMode(EXERCISE_BUTTON,INPUT_PULLUP);
-  lcd.begin(16,2);lcd.clear();setLine(0,"PART A A2.0");setLine(1,"Starting...");
+  lcd.begin(16,2);lcd.clear();setLine(0,"PART A " PART_A_VERSION);setLine(1,"Starting...");
   Wire.begin();
 #if defined(ARDUINO_ARCH_RENESAS_UNO) || defined(WIRE_HAS_TIMEOUT)
   Wire.setWireTimeout(5000,true); // A sensor fault must not wait indefinitely.

@@ -133,16 +133,20 @@ def read_history(device, timeout=10, clock=time.monotonic, metadata=None):
             if metadata is not None:
                 metadata['device']='part_a' if part_a else 'station'
                 metadata.pop("symptoms", None)
-        elif started and not part_a and line.startswith("UNWELL,") and metadata is not None:
+        elif started and metadata is not None and line.startswith("A_UNWELL," if part_a else "UNWELL,"):
+            exercises = PART_A_EXERCISES if part_a else SYMPTOM_EXERCISES
+            max_count = 65535 if part_a else 1023
             try:
                 generation, *counts = map(int, line.split(",")[1:])
-                if generation < 0 or len(counts) != 3 or any(not 0<=n<=1023 for n in counts):
+                if not 0 <= generation <= 0xFFFFFFFF or len(counts) != len(exercises):
+                    raise ValueError
+                if any(not 0 <= n <= max_count for n in counts):
                     raise ValueError
                 if not generation and any(counts):
                     raise ValueError
             except ValueError as error:
-                raise ValueError("Invalid symptom history from HoldStation.") from error
-            metadata["symptoms"] = (generation, dict(zip(SYMPTOM_EXERCISES, counts)))
+                raise ValueError("Invalid symptom history from the connected board.") from error
+            metadata["symptoms"] = (generation, dict(zip(exercises, counts)))
         elif started and line.startswith('ASAVED,' if part_a else 'SAVED,'):
             row = parse_a_saved(line) if part_a else parse_saved(line)
             previous = rows.get(row["session_id"])

@@ -4,16 +4,16 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A2.0 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
-| `HoldStation/HoldStation.ino` — B2.7 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
+| `PartA/PartA.ino` — A2.1 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `HoldStation/HoldStation.ino` — B2.8 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
-Part A A2.0 rebuilds the session/button controller using explicit states like Part B. It retains the team's movement thresholds (including lateral raise 25), sensor pins, pulse data and existing EEPROM/CSV format. The obsolete `WearableMonitor` implementation has been removed. Part B is unchanged. LED work remains deferred.
+Part A A2.1 adds symptom reporting to the A2.0 session controller. It retains the team's movement thresholds (including lateral raise 25), sensor pins, pulse data and saved workout format.
 
 ## Upload Part A
 
 1. Install **LiquidCrystal by Arduino** and **SparkFun MAX3010x Pulse and Proximity Sensor Library** in Arduino IDE's Library Manager.
-2. Open `PartA/PartA.ino`, keeping all four files in that folder together, including the new `PartACore.h`.
+2. Open `PartA/PartA.ino`, keeping all four files in that folder together.
 3. Select **Arduino Uno R4 Minima** and its USB port (COM6 on the current prototype), then Upload. Keep the accelerometer still during startup calibration.
 4. Keep the original working wiring. Pin assignments and tests are in [PART_A.md](docs/PART_A.md).
 
@@ -79,13 +79,21 @@ for the selected exercise and shows the station total. Press MODE to
 acknowledge the message. The cancelled attempt does not count as a completed
 exercise.
 
-In the Windows app, choose the participant and use **Read COM port** before
-the next participant uses the station. In the import preview, check the box to
-assign the new symptom reports to that participant. The profile and Clean
-report PDF show **Times unwell** by exercise. These reports identify the
-exercise in progress when symptoms were reported.
+## Part A symptom reports — A2.1
 
-**Erase history** resets the board's three counts to zero. Import first if you
+Pause with START, hold EXERCISE for 2 seconds, then confirm **Cancel attempt**
+with START. Answer **Feeling unwell?** with START for Yes or EXERCISE for No.
+Yes saves a report for squats or lateral raises. Press EXERCISE to dismiss the
+saved count. The cancelled workout is discarded. Confirming **Erase history**
+clears the board's saved sessions and symptom counts.
+
+In the Windows app, open the participant and use **Read COM port** for each
+board before the next participant uses it. In each preview, check the box to
+assign new symptom reports. The profile and Clean report PDF show one **Times
+unwell** total and a count for each exercise reported across both boards.
+The exercise listed was in progress when symptoms were reported.
+
+**Erase history** resets the connected board's counts to zero. Import first if you
 want to retain them. Counts already saved to a participant profile remain on
 the computer. Repeated imports from the same station on the same computer skip
 reports already imported. If the station does not expose a USB serial number,

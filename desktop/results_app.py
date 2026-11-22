@@ -471,7 +471,7 @@ class ResultsApp:
             ports=list(serial.tools.list_ports.comports())
         except ImportError:messagebox.showerror("Serial support","The source version needs pyserial. The Windows executable includes it.",parent=self.root);return
         dialog=tk.Toplevel(self.root);dialog.title("Read saved sessions from COM port");dialog.geometry("570x250");dialog.transient(self.root);dialog.grab_set()
-        ttk.Label(dialog,text="Finish and save the session first. Close Arduino Serial Monitor.\nConnecting may reset the Uno; saved summaries remain.",wraplength=530).pack(anchor="w",padx=16,pady=16)
+        ttk.Label(dialog,text="Finish or cancel the attempt first. Close Arduino Serial Monitor.\nConnecting may reset the Uno; saved results remain.",wraplength=530).pack(anchor="w",padx=16,pady=16)
         port=tk.StringVar(value=ports[0].device if ports else "COM10")
         box=ttk.Combobox(dialog,textvariable=port,values=[p.device for p in ports]);box.pack(anchor="w",padx=16)
         ttk.Label(dialog,text="Select either board's port. Part A or B is detected automatically.").pack(anchor="w",padx=16,pady=8)
@@ -488,8 +488,7 @@ class ResultsApp:
                     with serial.Serial(device,115200,timeout=0.25) as connection:
                         time.sleep(2);connection.reset_input_buffer()
                         snapshot={}
-                        rows,notice=read_all_history(connection,symptom_snapshot=snapshot)
-                    if snapshot:snapshot["source"]=source_key
+                        rows,notice=read_all_history(connection,symptom_snapshot=snapshot,symptom_source=source_key)
                     self.jobs.put(("rows",(rows,snapshot),device+(" - "+notice if notice else "")))
                 except Exception as error:self.jobs.put(("error",str(error),device))
             threading.Thread(target=worker,daemon=True).start()

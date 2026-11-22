@@ -57,6 +57,21 @@ void testArchive(){
   }
   assert(log.clear());PartASavedSession fresh={0,5000,0,2,800,2,1};
   assert(log.append(fresh) && fresh.id==1 && fresh.historyId==2);
+
+  EEPROMClass symptomsMemory;PartAArchive<EEPROMClass> symptomsLog(symptomsMemory);
+  assert(symptomsLog.addSymptom(0) && symptomsLog.addSymptom(1));
+  assert(symptomsLog.latestId()==0 && symptomsLog.historyId()==1);
+  for(int cut=0;cut<12;++cut){
+    EEPROMClass partialMemory=symptomsMemory;partialMemory.writes=0;partialMemory.failAfter=cut;
+    PartAArchive<EEPROMClass> partial(partialMemory);
+    try{partial.addSymptom(1);}catch(int){}
+    auto preserved=partial.symptoms();
+    assert(preserved.squats==1 && preserved.lateralRaises==1);
+  }
+  PartAArchive<EEPROMClass> symptomReboot(symptomsMemory);
+  assert(symptomReboot.symptoms().total()==2);
+  assert(symptomReboot.clear() && symptomReboot.symptoms().total()==0);
+  assert(symptomReboot.addSymptom(1) && symptomReboot.symptoms().lateralRaises==1);
 }
 int main(int argc,char** argv){
   for(int& value:fakePins)value=HIGH;
@@ -104,8 +119,21 @@ int main(int argc,char** argv){
   press(EXERCISE_BUTTON,2200);assert(menu==CANCEL_CONFIRM);
   advanceA(70);assert(menuArmed);
   next();advanceA(2200);assert(menu==NORMAL && session.state==PAUSED && repCount==1);
-  press(EXERCISE_BUTTON,2200);advanceA(70);go();advanceA(2200);
+  assert(sessionArchive.symptoms().total()==0);
+  press(EXERCISE_BUTTON,2200);advanceA(70);go();
+  advanceA(100);
+  assert(menu==SYMPTOM_PROMPT && lcd.rows[0].find("Feeling unwell?")==0);
+  next();advanceA(2200);
+  assert(sessionArchive.symptoms().total()==0);
   assert(menu==NORMAL && session.state==IDLE && repCount==0 && sessionArchive.latestId()==2);
+  beginAttempt();raise();go();press(EXERCISE_BUTTON,2200);go();
+  assert(menu==SYMPTOM_PROMPT && sessionArchive.latestId()==2);
+  go();assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().lateralRaises==1);
+  go();assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().lateralRaises==1);
+  next();assert(menu==NORMAL && session.state==IDLE && sessionArchive.latestId()==2);
+  Serial.connected=true;Serial.output.clear();commandA("history\n");
+  assert(Serial.output.find("A_UNWELL,1,0,1\n")!=std::string::npos);
+  Serial.connected=false;Serial.output.clear();
   // Save failure keeps the result paused; retry saves once and returns DONE.
   beginAttempt();raise();assert(repCount==1);
   EEPROM.ignoreWrites=true;finish();
@@ -115,14 +143,14 @@ int main(int argc,char** argv){
   EEPROMClass before=EEPROM;openErase();advanceA(1500);
   assert(menu==ERASE_CONFIRM && memcmp(before.bytes,EEPROM.bytes,1024)==0);
   next();advanceA(2200);assert(menu==NORMAL && session.state==DONE);
-  assert(memcmp(before.bytes,EEPROM.bytes,1024)==0 && repCount==1);
+  assert(memcmp(before.bytes,EEPROM.bytes,1024)==0 && repCount==1 && sessionArchive.symptoms().total()==1);
   // Running erase: pause/exclude all menu time, keep the pending attempt.
   beginAttempt();raise();uint16_t count=repCount;
   openErase();uint32_t insideMenu=session.active;advanceA(1200);assert(session.active==insideMenu);
   next();advanceA(2200);
   assert(session.state==RUNNING && repCount==count && menu==NORMAL);
   openErase();insideMenu=session.active;go();
-  assert(menu==NOTICE && sessionArchive.latestId()==0 && repCount==count);
+  assert(menu==NOTICE && sessionArchive.latestId()==0 && repCount==count && sessionArchive.symptoms().total()==0);
   advanceA(2200);assert(session.state==RUNNING && session.active-insideMenu<400);
   finish();assert(sessionArchive.readId(1,result) && result.reps==count && result.historyId==2);
   // Paused erase, cancelled and confirmed, both retain current statistics.
@@ -138,7 +166,7 @@ int main(int argc,char** argv){
   beginAttempt();go();assert(session.state==PAUSED);go();finish();
   assert(session.state==DONE && sessionArchive.latestId()==2);
   Serial.space=64;Serial.output.clear();commandA("version\n");
-  assert(Serial.output=="# DEVICE,part_a,A2.0\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.1\n");
   Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
   assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);

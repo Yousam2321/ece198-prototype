@@ -1,8 +1,8 @@
 ECE198 Exercise Results - Windows
 
 Close the old app, extract the download and double-click dist/ECE198_Results.exe.
-No Python installation is needed for the executable. Keep B2.5/B2.6 firmware on
-Part B. Upload the new PartA/PartA.ino to Part A for its added EEPROM/history support.
+No Python installation is needed for the executable. For symptom reports, use
+Part A A2.1 and HoldStation B2.8. Older firmware can still provide saved workouts.
 Existing profiles, history and hold criteria remain in the same local database:
 %LOCALAPPDATA%\ECE198_Results\results.sqlite3
 
@@ -10,7 +10,9 @@ Existing profiles, history and hold criteria remain in the same local database:
 2. Open results CSV (Part A, hold or chest exports), or Read COM port. Close Serial Monitor
    first. Read COM port auto-detects A/B, reading both B archives when relevant. Select only
    that participant's records and Keep selected sessions. Duplicate imports skip.
-   Older firmware without chest support still supplies its hold records.
+   To import symptom reports, open the same participant for both boards and
+   check the symptom-report box in each preview. The profile and Clean report
+   PDF show the combined Times unwell total and counts by exercise.
 3. Enter targets only for the exercises loaded in this profile. Hold targets use
    seconds; chest targets use whole good-rep counts; Part A squats/lateral raises
    use whole recorded-rep counts. The two percentage fields
@@ -52,7 +54,7 @@ The original detector does not save failed attempts, so there is no good-rep
 percentage or hold consistency for A. Active time excludes pauses. Mean BPM uses
 accepted beats during active exercise; missing beats display Unavailable. BPM
 and active time do not change the verdict. Graphs compare the same exercise only.
-Part A A2.0 saves on long START (3 seconds) and keeps the result on screen.
+Part A saves on long START (3 seconds) and keeps the result on screen.
 One START tap starts a new attempt. EXERCISE switches only at READY/DONE;
 hold EXERCISE 2 seconds while paused to cancel without saving. The latest 20
 completed sessions remain in the board's EEPROM, including existing A1.x rows.

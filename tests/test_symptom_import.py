@@ -11,6 +11,32 @@ from clean_report import build_report
 
 
 class SymptomImportTest(unittest.TestCase):
+    def test_import_both_boards_into_one_profile(self):
+        a = Port([b"# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id\n",
+                  b"A_UNWELL,1,2,1\n", b"# No saved A sessions\n"])
+        b = Port([b"# SAVED,id,exercise,active_ms,in_band_ms\n",
+                  b"UNWELL,1,1,0,1\n", b"# No saved sessions\n",
+                  b"# REPSAVED,id,exercise\n", b"# No saved rep sessions\n"])
+        snapshots = []
+        for port in (a, b):
+            snapshot = {}
+            rows, _ = read_all_history(port, symptom_snapshot=snapshot, symptom_source="port:COM10",
+                                       timeout=2, clock=port.clock)
+            self.assertEqual(rows, [])
+            snapshots.append(snapshot)
+        with tempfile.TemporaryDirectory() as temp:
+            store = ResultStore(Path(temp) / "results.sqlite")
+            for snapshot in snapshots + snapshots:
+                store.add("Combined participant", [], snapshot)
+            counts = store.symptom_counts("Combined participant")
+            self.assertEqual(counts, {"squats": 2, "lateral_raises": 1, "wall_sit": 1, "chest_press": 1})
+            self.assertEqual(sum(counts.values()), 5)
+            self.assertEqual(store.load("Combined participant"), [])
+            report = Path(temp) / "combined.pdf"
+            build_report(report, "Combined participant", [], {}, 90, symptoms=counts)
+            self.assertTrue(report.read_bytes().startswith(b"%PDF"))
+            store.close()
+
     def test_symptoms_only_import_and_pdf(self):
         port = Port([b"# SAVED,id,exercise,active_ms,in_band_ms\n",
                      b"UNWELL,1,1,0,2\n", b"# No saved sessions\n",

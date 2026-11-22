@@ -1,16 +1,22 @@
 #pragma once
 #include <stdint.h>
 
-// Independent Part A board. Twenty CRC-protected records at 0..459; redundant
-// generation journal at 900..915. Written only on END or exercise switch.
+// Independent Part A board. Twenty CRC-protected records at 0..459, erase
+// generation journal at 900..915, and a symptom count journal at 916..937.
 struct PartASavedSession {
   uint32_t id,activeMs,historyId;
   uint16_t reps,bpmTenths,bpmSamples;
   uint8_t exercise;
 };
 
+struct PartASymptoms {
+  uint16_t squats, lateralRaises;
+  uint32_t total() const { return uint32_t(squats)+lateralRaises; }
+};
+
 template<class Memory> class PartAArchive {
   Memory& memory;
+  static const int SYMPTOMS_BASE=916, SYMPTOM_BYTES=11;
   static void put(uint8_t* p,uint32_t n,uint8_t bytes){for(uint8_t i=0;i<bytes;++i){p[i]=uint8_t(n);n>>=8;}}
   static uint32_t get(const uint8_t* p,uint8_t bytes){uint32_t n=0;for(uint8_t i=0;i<bytes;++i)n|=uint32_t(p[i])<<(8*i);return n;}
   static uint16_t crc(const uint8_t* p,uint8_t size){
@@ -28,10 +34,49 @@ template<class Memory> class PartAArchive {
     memory.update(at,0);for(uint8_t i=1;i<8;++i)memory.update(at+i,p[i]);memory.update(at,0xD8);
     return generationAt(at)==value;
   }
+  PartASymptoms symptomsAt(int address,uint32_t generation){
+    uint8_t bytes[SYMPTOM_BYTES];
+    for(uint8_t i=0;i<SYMPTOM_BYTES;++i)bytes[i]=memory.read(address+i);
+    if(bytes[0]!=0xD9 || get(bytes+1,4)!=generation || get(bytes+9,2)!=crc(bytes+1,8))return {};
+    return {uint16_t(get(bytes+5,2)),uint16_t(get(bytes+7,2))};
+  }
 public:
   static const uint8_t CAPACITY=20,RECORD_BYTES=23;
   explicit PartAArchive(Memory& m):memory(m){}
   uint32_t historyId(){if(memory.length()<916)return 0;uint32_t a=generationAt(900),b=generationAt(908);return a>b?a:b;}
+  PartASymptoms symptoms(){
+    if(memory.length()<SYMPTOMS_BASE+2*SYMPTOM_BYTES)return {};
+    uint32_t generation=historyId();
+    if(!generation)return {};
+    PartASymptoms first=symptomsAt(SYMPTOMS_BASE,generation);
+    PartASymptoms second=symptomsAt(SYMPTOMS_BASE+SYMPTOM_BYTES,generation);
+    return first.total()>=second.total()?first:second;
+  }
+  bool addSymptom(uint8_t exercise){
+    if(exercise>1 || memory.length()<SYMPTOMS_BASE+2*SYMPTOM_BYTES)return false;
+    uint32_t generation=historyId();
+    if(!generation){
+      if(!writeGeneration(1))return false;
+      generation=1;
+    }
+    PartASymptoms first=symptomsAt(SYMPTOMS_BASE,generation);
+    PartASymptoms second=symptomsAt(SYMPTOMS_BASE+SYMPTOM_BYTES,generation);
+    bool firstLatest=first.total()>=second.total();
+    PartASymptoms next=firstLatest?first:second;
+    uint16_t& count=exercise==0?next.squats:next.lateralRaises;
+    if(count==UINT16_MAX)return false;
+    ++count;
+    int address=firstLatest?SYMPTOMS_BASE+SYMPTOM_BYTES:SYMPTOMS_BASE;
+    uint8_t bytes[SYMPTOM_BYTES]={};
+    put(bytes+1,generation,4);put(bytes+5,next.squats,2);put(bytes+7,next.lateralRaises,2);
+    put(bytes+9,crc(bytes+1,8),2);
+    // Keep the previous count valid until the new copy is fully written.
+    memory.update(address,0);
+    for(uint8_t i=1;i<SYMPTOM_BYTES;++i)memory.update(address+i,bytes[i]);
+    memory.update(address,0xD9);
+    PartASymptoms check=symptomsAt(address,generation);
+    return check.squats==next.squats && check.lateralRaises==next.lateralRaises;
+  }
   bool readSlot(uint8_t slot,PartASavedSession& r){
     if(slot>=CAPACITY || memory.length()<916)return false;
     uint8_t p[RECORD_BYTES];for(uint8_t i=0;i<RECORD_BYTES;++i)p[i]=memory.read(slot*RECORD_BYTES+i);
@@ -60,6 +105,7 @@ public:
   bool clear(){
     if(memory.length()<916)return false;
     uint32_t old=historyId();
+    // One generation change clears attempts and symptom counts together.
     if(old==UINT32_MAX || !writeGeneration(old+1))return false;
     for(int i=0;i<CAPACITY*RECORD_BYTES;++i)memory.update(i,0);
     for(int i=0;i<CAPACITY*RECORD_BYTES;++i)if(memory.read(i)!=0)return false;
