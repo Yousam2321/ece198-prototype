@@ -2,13 +2,9 @@
 #include <iostream>
 #include "parta_stubs/Arduino.h"
 #include "parta_stubs/EEPROM.h"
-#include "parta_stubs/Wire.h"
-uint32_t fakeNow=0,fakePulse=0;
+uint32_t fakeNow=0;
 int fakePins[20]={},fakeAnalog[3]={512,512,512};
-FakeSerial Serial;EEPROMClass EEPROM;PartAWire Wire;
-bool fakeSensorPresent=true,fakeBeat=false;
-uint8_t fakeWireError=0;
-long fakeIr=0;
+FakeSerial Serial;EEPROMClass EEPROM;
 #if defined(ARDUINO_ARCH_RENESAS_UNO)
 bool fakeUsbInterruptsEnabled=true,fakeUsbCloseOnSubmit=false,fakeUsbFullOnSubmit=false;
 #endif
@@ -38,14 +34,20 @@ void commandA(const char* line){
 void testArchive(){
   EEPROMClass memory;PartAArchive<EEPROMClass> log(memory);PartASavedSession r;
   for(int i=1;i<=25;++i){
-    PartASavedSession record={0,10000,0,5,0,0,uint8_t(i%2)};assert(log.append(record));
+    PartASavedSession record={0,10000,0,5,uint8_t(i%2)};assert(log.append(record));
   }
   assert(!log.readId(5,r) && log.readId(6,r) && log.readId(25,r));
   PartAArchive<EEPROMClass> reboot(memory);
   assert(reboot.readId(25,r) && r.reps==5); // Existing A1.x byte format.
+  const uint8_t legacyRecord[]={0xD7,0x01,0x00,0x01,0x00,0x00,0x00,0x10,0x27,0x00,0x00,0x05,
+    0x00,0xEE,0x02,0x03,0x00,0x01,0x00,0x00,0x00,0x42,0xE6};
+  EEPROMClass legacyMemory=memory;
+  memcpy(legacyMemory.bytes,legacyRecord,sizeof(legacyRecord));
+  PartAArchive<EEPROMClass> legacy(legacyMemory);
+  assert(legacy.readId(1,r) && r.reps==5 && r.activeMs==10000);
   for(int cut=0;cut<24;++cut){
     EEPROMClass broken=memory;broken.writes=0;broken.failAfter=cut;PartAArchive<EEPROMClass> partial(broken);
-    PartASavedSession record={0,10000,0,3,750,3,0};try{partial.append(record);}catch(int){}
+    PartASavedSession record={0,10000,0,3,0};try{partial.append(record);}catch(int){}
     assert(!partial.readId(26,r) && partial.readId(25,r));
   }
   memory.bytes[((25-1)%20)*23+11]^=1;assert(!log.readId(25,r));
@@ -55,7 +57,7 @@ void testArchive(){
     if(erasing.historyId()==2)assert(!erasing.readId(24,r) && erasing.latestId()==0);
     else assert(erasing.readId(24,r));
   }
-  assert(log.clear());PartASavedSession fresh={0,5000,0,2,800,2,1};
+  assert(log.clear());PartASavedSession fresh={0,5000,0,2,1};
   assert(log.append(fresh) && fresh.id==1 && fresh.historyId==2);
 
   EEPROMClass symptomsMemory;PartAArchive<EEPROMClass> symptomsLog(symptomsMemory);
@@ -89,7 +91,6 @@ int main(int argc,char** argv){
 #endif
   Serial.connected=false;
   setup();assert(calibrating && sessionArchive.latestId()==0);
-  assert(Wire.timeout==5000);
   advanceA(1100);assert(!calibrating && session.state==IDLE && Serial.output.empty());
   // Fully standalone use: no monitor, no commands, no serial output.
   beginAttempt();squat();assert(repCount==1);
@@ -97,22 +98,18 @@ int main(int argc,char** argv){
   go();assert(session.state==PAUSED);
   uint32_t paused=session.active;advanceA(5000);assert(session.active==paused);
   go();assert(session.state==RUNNING && repCount==2);
-  // The saved mean includes accepted active beats only.
-  uint32_t beatTime=fakeNow;acceptPulseSample(60000,beatTime);fakeBeat=true;
-  acceptPulseSample(60000,beatTime+1000); // First detected beat.
-  fakeBeat=true;acceptPulseSample(60000,beatTime+2000);
-  assert(bpmSamples==1 && bpmSumTenths==600);
+  advanceA(100);assert(lcd.rows[1].find("R2 T")==0 && lcd.rows[1].find("B---")==std::string::npos);
   finish();assert(session.state==DONE && saved && repCount==2);
   uint32_t firstDone=session.active;
   PartASavedSession result;
-  assert(sessionArchive.readId(1,result) && result.reps==2 && result.bpmTenths==600);
-  assert(result.activeMs==firstDone && result.bpmSamples==1);
+  assert(sessionArchive.readId(1,result) && result.reps==2);
+  assert(result.activeMs==firstDone);
   advanceA(5000);assert(session.state==DONE && session.active==firstDone && repCount==2);
   auto screen0=lcd.rows[0],screen1=lcd.rows[1];
   advanceA(2000);assert(lcd.rows[0]==screen0 && lcd.rows[1]==screen1);
   finish();assert(sessionArchive.latestId()==1 && session.state==DONE); // No duplicate.
   // One tap from DONE starts a completely fresh attempt, never IDLE/DONE loops.
-  beginAttempt();assert(repCount==0 && bpmSamples==0 && bpmSumTenths==0);
+  beginAttempt();assert(repCount==0);
   squat();assert(repCount==1);finish();assert(sessionArchive.latestId()==2);
   next();assert(currentExercise==1 && session.state==IDLE && repCount==0);
   beginAttempt();
@@ -177,7 +174,7 @@ int main(int argc,char** argv){
   beginAttempt();go();assert(session.state==PAUSED);go();finish();
   assert(session.state==DONE && sessionArchive.latestId()==2);
   Serial.space=64;Serial.output.clear();commandA("version\n");
-  assert(Serial.output=="# DEVICE,part_a,A2.2\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.3\n");
   Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
   assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);
@@ -196,8 +193,6 @@ int main(int argc,char** argv){
   assert(sessionArchive.addSymptom(0));
   commandA("erase CONFIRM\n");assert(menu==NOTICE && sessionArchive.latestId()==0 && sessionArchive.symptoms().total()==0);
   advanceA(2200);assert(menu==NORMAL && session.state==DONE);
-  // Pulse fault is isolated: UI/session work even with a missing sensor.
-  fakeWireError=2;advanceA(1200);assert(!pulseSensorReady);
   beginAttempt();finish();assert(session.state==DONE && saved);
 #if defined(ARDUINO_ARCH_RENESAS_UNO)
   fakeUsbCloseOnSubmit=true;Serial.connected=true;
@@ -234,7 +229,7 @@ int main(int argc,char** argv){
   wrapped.state=PAUSED;wrapped.tick(500);assert(wrapped.active==301);
   wrapped.state=RUNNING;wrapped.tick(600);assert(wrapped.active==401);
   testArchive();
-  std::cout<<"PASS: A2 state/buttons, repeated saves/restarts, detector criteria, pulse polling, "
+  std::cout<<"PASS: A2 state/buttons, repeated saves/restarts, detector criteria, "
              "all-state erase/cancel, timing, stalled/closed COM exports, legacy persistence and power-loss checks\n";
   if(argc>1 && !strcmp(argv[1],"--emit-history"))std::cout<<exportFixture;
 }

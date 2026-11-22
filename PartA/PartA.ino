@@ -1,9 +1,8 @@
 /*
- * ECE198 Part A A2.2 -- explicit session controller, as used by Part B.
+ * ECE198 Part A A2.3 -- explicit session controller, as used by Part B.
  * Arduino Uno R4 Minima. Existing wiring and exercise criteria are retained.
  * START D2 -> GND; EXERCISE D3 -> GND (INPUT_PULLUP).
  * MMA7361: X=A0, Y=A1, Z=A2. LCD: RS=7, E=8, data=9,10,11,12.
- * MAX30102: SDA/SCL, with the same verified breakout power wiring as before.
  *
  * START tap: start 3s countdown / pause / resume / next attempt after DONE.
  * START hold 3s: finish/save once. EXERCISE tap at READY/DONE: next exercise.
@@ -14,11 +13,8 @@
  * erase CONFIRM (while not running). CSV/EEPROM format matches A1.x.
  */
 #include <Arduino.h>
-#include <Wire.h>
 #include <LiquidCrystal.h>
 #include <EEPROM.h>
-#include "MAX30105.h"
-#include "heartRate.h"
 #include "PartACore.h"
 #include "PartASessions.h"
 #include "PartASerial.h"
@@ -29,20 +25,17 @@
 #endif
 
 using namespace parta;
-#define PART_A_VERSION "A2.2"
+#define PART_A_VERSION "A2.3"
 const uint8_t START_BUTTON=2, EXERCISE_BUTTON=3;
 const uint8_t X_PIN=A0,Y_PIN=A1,Z_PIN=A2;
 LiquidCrystal lcd(7,8,9,10,11,12);
-MAX30105 pulseSensor;
 PartAArchive<EEPROMClass> sessionArchive(EEPROM);
 PartASerialLink<decltype(Serial)> serialLink(Serial);
 Session session;
 Key startKey,exerciseKey;
 uint8_t currentExercise=0; // 0=squats, 1=lateral raises
 uint16_t repCount=0;
-uint32_t bpmSumTenths=0,lastBeatAt=0;
-uint16_t bpmSamples=0,displayBpm=0;
-bool beatSeen=false,pulseSensorReady=false,hasAttempt=false,saveFailed=false,saved=false;
+bool hasAttempt=false,saveFailed=false,saved=false;
 uint32_t savedId=0;
 
 // Keep the team's original detector thresholds, confirmation samples, EMA
@@ -55,9 +48,7 @@ uint32_t lastSquatRepTime=0,lastLatRaiseRepTime=0;
 float gravityX=0,gravityY=0,gravityZ=0,x=0,y=0,z=0;
 bool calibrating=true;
 uint16_t calibrationSamples=0;
-uint32_t calibrationAt=0,lastAccelAt=0,lastPulseAt=0,lastPulseHealthAt=0,lastPulseSampleAt=0;
-const uint32_t FINGER_THRESHOLD=50000UL;
-uint8_t rates[5]={},rateSpot=0,validRates=0;
+uint32_t calibrationAt=0,lastAccelAt=0;
 
 // Menus pause the session without changing the attempt or saved archive.
 // The original state is restored only after the menu/result has finished.
@@ -94,7 +85,7 @@ void resetDetectors(){
   squatDownSamples=squatReturnSamples=latRaiseUpSamples=latRaiseReturnSamples=0;
 }
 void resetAttempt(uint32_t now){
-  session.reset(now);repCount=0;bpmSumTenths=0;bpmSamples=0;
+  session.reset(now);repCount=0;
   hasAttempt=false;saveFailed=false;saved=false;savedId=0;
   lastSquatRepTime=lastLatRaiseRepTime=0;resetDetectors();
 }
@@ -104,9 +95,7 @@ void finishAttempt(uint32_t now){
   session.tick(now);session.state=SAVING;resetDetectors();
   renderDisplay(true); // Show saving before touching EEPROM.
   abortReply(); // A changing archive must never finish an old partial export.
-  PartASavedSession record={0,session.active,0,repCount,
-    bpmSamples?uint16_t((bpmSumTenths+bpmSamples/2)/bpmSamples):uint16_t(0),
-    bpmSamples,currentExercise};
+  PartASavedSession record={0,session.active,0,repCount,currentExercise};
   bool ok=sessionArchive.append(record);
   session.last=millis(); // Never credit save time.
   if(ok){saved=true;savedId=record.id;saveFailed=false;session.state=DONE;}
@@ -260,46 +249,6 @@ void serviceAccelerometer(uint32_t now){
   x=rawX-gravityX;y=rawY-gravityY;z=rawZ-gravityZ;
   updateSquatCounter(now);updateLatRaiseCounter(now);
 }
-void clearPulseReading(){
-  displayBpm=0;beatSeen=false;validRates=rateSpot=0;
-}
-void acceptPulseSample(uint32_t ir,uint32_t now){
-  if(ir<FINGER_THRESHOLD){clearPulseReading();return;}
-  if(!checkForBeat(ir))return;
-  if(beatSeen){
-    uint32_t dt=uint32_t(now-lastBeatAt);
-    if(dt){
-      float bpm=60000.0f/dt;
-      if(bpm>=40 && bpm<=180){
-        rates[rateSpot]=uint8_t(bpm);rateSpot=uint8_t((rateSpot+1)%5);
-        if(validRates<5)++validRates;
-        uint16_t sum=0;for(uint8_t i=0;i<validRates;++i)sum+=rates[i];
-        displayBpm=sum/validRates;
-        if(session.state==RUNNING && bpmSamples<65535){
-          bpmSumTenths+=uint16_t(bpm*10+.5f);++bpmSamples;
-        }
-      }
-    }
-  }
-  lastBeatAt=now;beatSeen=true;
-}
-void servicePulse(uint32_t now){
-  if(!pulseSensorReady || uint32_t(now-lastPulseAt)<10)return;
-  lastPulseAt=now;
-  if(uint32_t(now-lastPulseHealthAt)>=1000){
-    lastPulseHealthAt=now;
-    Wire.beginTransmission(uint8_t(0x57));
-    if(Wire.endTransmission()!=0){pulseSensorReady=false;clearPulseReading();return;}
-  }
-  // No getIR()/safeCheck(250) wait. Poll once and consume buffered samples.
-  pulseSensor.check();
-  bool haveSample=false;uint32_t ir=0;
-  for(uint8_t i=0;i<4 && pulseSensor.available();++i){
-    ir=pulseSensor.getFIFOIR();pulseSensor.nextSample();haveSample=true;
-  }
-  if(haveSample){lastPulseSampleAt=now;acceptPulseSample(ir,now);}
-  else if(uint32_t(now-lastPulseSampleAt)>1500)clearPulseReading();
-}
 void setLine(uint8_t row,const char* value){
   char padded[17];memset(padded,' ',16);padded[16]=0;
   size_t n=strlen(value);if(n>16)n=16;memcpy(padded,value,n);
@@ -336,8 +285,7 @@ void renderDisplay(bool force){
     strcpy(top,"SAVE FAILED");strcpy(bottom,"Hold GO 3s retry");
   }else{
     snprintf(top,sizeof(top),"%s %s",screenName(),stateName(session.state));
-    char pulse[6]="---";if(displayBpm)snprintf(pulse,sizeof(pulse),"%u",displayBpm);
-    snprintf(bottom,sizeof(bottom),"R%u T%lus B%s",repCount,(unsigned long)(session.active/1000),pulse);
+    snprintf(bottom,sizeof(bottom),"R%u T%lus",repCount,(unsigned long)(session.active/1000));
   }
   setLine(0,top);setLine(1,bottom);
 }
@@ -346,11 +294,10 @@ void queueLine(const char* line){
   memcpy(tx,line,size);tx[size]=0;txLength=uint8_t(size);txAt=0;
 }
 void queueSaved(const PartASavedSession& r){
-  char pulse[8]="";
-  if(r.bpmSamples)snprintf(pulse,sizeof(pulse),"%u.%u",r.bpmTenths/10,r.bpmTenths%10);
-  snprintf(tx,sizeof(tx),"ASAVED,%lu,%s,%lu,%u,%s,%u,%lu\n",
+  // Retain two reserved columns so existing apps can read session history.
+  snprintf(tx,sizeof(tx),"ASAVED,%lu,%s,%lu,%u,,0,%lu\n",
     (unsigned long)r.id,r.exercise==0?"squats":"lateral_raises",
-    (unsigned long)r.activeMs,r.reps,pulse,r.bpmSamples,(unsigned long)r.historyId);
+    (unsigned long)r.activeMs,r.reps,(unsigned long)r.historyId);
   txLength=uint8_t(strlen(tx));txAt=0;
 }
 void beginReply(Reply kind,uint32_t now){
@@ -382,8 +329,8 @@ void handleCommand(const char* value,uint32_t now){
 void prepareReply(){
   if(reply==VERSION_REPLY){queueLine("# DEVICE,part_a," PART_A_VERSION "\n");reply=NO_REPLY;}
   else if(reply==STATUS_REPLY){
-    snprintf(tx,sizeof(tx),"A_STATUS,%s,%s,%lu,%u,%u,%u,%u\n",exerciseName(),stateName(session.state),
-      (unsigned long)session.active,repCount,pulseSensorReady?1:0,
+    snprintf(tx,sizeof(tx),"A_STATUS,%s,%s,%lu,%u,%u,%u\n",exerciseName(),stateName(session.state),
+      (unsigned long)session.active,repCount,
       digitalRead(START_BUTTON)==LOW?1:0,digitalRead(EXERCISE_BUTTON)==LOW?1:0);
     txLength=uint8_t(strlen(tx));txAt=0;reply=NO_REPLY;
   }else if(reply==ERASE_REPLY){
@@ -393,7 +340,7 @@ void prepareReply(){
       queueLine("A_EVENT,part_a,pause_before_history\n");reply=NO_REPLY;return;
     }
     if(replyPhase==0){
-      queueLine("# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id\n");replyPhase=1;
+      queueLine("# ASAVED,id,exercise,active_ms,reps,reserved_1,reserved_2,history_id\n");replyPhase=1;
     }else if(replyPhase==1){
       snprintf(tx,sizeof(tx),"A_UNWELL,%lu,%u,%u\n",(unsigned long)exportGeneration,
         unsigned(exportSymptoms.squats),unsigned(exportSymptoms.lateralRaises));
@@ -436,15 +383,6 @@ void setup(){
   Serial.begin(115200);
   pinMode(START_BUTTON,INPUT_PULLUP);pinMode(EXERCISE_BUTTON,INPUT_PULLUP);
   lcd.begin(16,2);lcd.clear();setLine(0,"PART A " PART_A_VERSION);setLine(1,"Starting...");
-  Wire.begin();
-#if defined(ARDUINO_ARCH_RENESAS_UNO) || defined(WIRE_HAS_TIMEOUT)
-  Wire.setWireTimeout(5000,true); // A sensor fault must not wait indefinitely.
-#endif
-  pulseSensorReady=pulseSensor.begin(Wire,I2C_SPEED_STANDARD);
-  if(pulseSensorReady){
-    pulseSensor.setup();pulseSensor.setPulseAmplitudeRed(0x1F);
-    pulseSensor.setPulseAmplitudeIR(0x1F);pulseSensor.setPulseAmplitudeGreen(0);
-  }
   uint32_t now=millis();resetAttempt(now);calibrationAt=now;
   startKey.suppress(digitalRead(START_BUTTON)==LOW,now);
   exerciseKey.suppress(digitalRead(EXERCISE_BUTTON)==LOW,now);
@@ -456,7 +394,6 @@ void loop(){
   if(previous!=session.state)resetDetectors();
   serviceButtons(now);
   serviceAccelerometer(millis());
-  if(!calibrating)servicePulse(millis());
   renderDisplay();
   serviceSerial(millis());
 }

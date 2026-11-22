@@ -23,7 +23,7 @@ REP_COLUMNS=['session_id','exercise','active_ms','active_seconds','good_reps','a
 
 SYMPTOM_EXERCISES = ("wall_sit", "plank", "chest_press")
 PART_A_EXERCISES=('squats','lateral_raises')
-PART_A_COLUMNS=['session_id','exercise','active_ms','active_seconds','reps','bpm_avg','bpm_samples','history_id','exported_at_utc']
+PART_A_COLUMNS=['session_id','exercise','active_ms','active_seconds','reps','history_id','exported_at_utc']
 CSV_REPORT_FIELDS = ['row_type', 'times_unwell']
 
 
@@ -36,15 +36,12 @@ def parse_a_saved(line):
     fields=next(csv.reader([line]))
     if len(fields)!=8 or fields[0]!='ASAVED' or fields[2] not in PART_A_EXERCISES:
         raise ValueError('Incomplete Part A summary; retry export.')
-    identifier,active,reps,samples,generation=map(int,[fields[1],fields[3],fields[4],fields[6],fields[7]])
-    bpm=float(fields[5]) if fields[5].strip() else None
-    if (identifier<1 or not 0<=active<=4294967295 or not 0<=reps<=32767 or
-            not 0<=samples<=65535 or generation<1 or
-            (samples>0 and (bpm is None or not math.isfinite(bpm) or not 40<=bpm<=180)) or
-            (samples==0 and bpm is not None)):
+    # Columns 5 and 6 are reserved in A2.3 and later.
+    identifier,active,reps,generation=map(int,[fields[1],fields[3],fields[4],fields[7]])
+    if identifier<1 or not 0<=active<=4294967295 or not 0<=reps<=32767 or generation<1:
         raise ValueError('Invalid Part A summary; retry export.')
     return dict(session_id=identifier,exercise=fields[2],active_ms=active,active_seconds=f'{active/1000:.3f}',
-                reps=reps,bpm_avg='' if bpm is None else f'{bpm:.1f}',bpm_samples=samples,history_id=generation)
+                reps=reps,history_id=generation)
 
 
 def parse_rep_saved(line):

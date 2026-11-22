@@ -1,12 +1,12 @@
-# Part A A2.2 — build, controls and testing
+# Part A A2.3 — build, controls and testing
 
-Part A targets the **Uno R4 Minima**. A2.2 clears the unwell reports alongside the workout history and lets the operator start the erase from the report screen.
+Part A targets the **Uno R4 Minima**. A2.3 tracks exercises using the accelerometer and displays reps and elapsed time. History erase clears saved workouts and unwell reports.
 
 ## Install and upload
 
-Install **LiquidCrystal by Arduino** and **SparkFun MAX3010x Pulse and Proximity Sensor Library** through Arduino IDE's Library Manager. MAX30105.h comes from that SparkFun library and is also used for MAX30102.
+Install **LiquidCrystal by Arduino** through Arduino IDE's Library Manager.
 
-Keep all four files together: PartA.ino, PartACore.h, PartASerial.h and PartASessions.h. Open PartA.ino, choose Arduino Uno R4 Minima and the board's port (**COM6** for the current prototype), and upload. Keep the accelerometer still during the roughly one-second startup calibration. The LCD then shows **SQ A2.2 READY** or **LAT A2.2 READY**.
+Keep all four files together: PartA.ino, PartACore.h, PartASerial.h and PartASessions.h. Open PartA.ino, choose Arduino Uno R4 Minima and the board's port (**COM6** for the current prototype), and upload. Keep the accelerometer still during the roughly one-second startup calibration. The LCD then shows **SQ A2.3 READY** or **LAT A2.3 READY**.
 
 ## Existing wiring
 
@@ -17,7 +17,6 @@ Keep all four files together: PartA.ino, PartACore.h, PartASerial.h and PartASes
 | MMA7361 X / Y / Z | A0 / A1 / A2 |
 | Parallel LCD RS / Enable | D7 / D8 |
 | Parallel LCD D4 / D5 / D6 / D7 | D9 / D10 / D11 / D12 |
-| MAX30102 data | Board-labelled SDA / SCL |
 
 Keep the previously working sensor power wiring and common ground. This update adds no shield, LED or extra component. SQ means squats; LAT means lateral raises.
 
@@ -41,7 +40,7 @@ For exact stop timing, tap START to pause at the end of the exercise, then hold 
 
 Hold both buttons together for 3 seconds until **ERASE HISTORY?** appears. You can open it from the **Report saved** screen. Release both, then tap START to confirm or EXERCISE to cancel. The cleared screen shows **Unwell: 0**.
 
-The menu pauses the current attempt. After two seconds of result feedback it returns to the session state. Countdowns retain their remaining time. Current reps, active time and accepted-beat statistics stay in RAM. An unfinished movement must restart after the pause. Erase clears the board's completed sessions and both unwell counters. The app and exported CSVs keep their copies of already imported data.
+The menu pauses the current attempt. After two seconds of result feedback it returns to the session state. Countdowns retain their remaining time. Current reps and active time stay in RAM. An unfinished movement must restart after the pause. Erase clears the board's completed sessions and both unwell counters. The app and exported CSVs keep their copies of already imported data.
 
 ## Detector criteria retained from the team sketch
 
@@ -54,12 +53,6 @@ Accelerometer baseline calibration averages 200 readings, taken 5 ms apart. Afte
 
 A completed return adds one rep. Pauses, menus and sampling gaps over 150 ms reset incomplete movements. Counters saturate at 32767 rather than wrapping. These records contain rep counts, not failed-attempt counts or a movement-quality percentage.
 
-## Pulse and control responsiveness
-
-Pulse data remains enabled. The same IR presence threshold (50000), accepted BPM interval (40–180) and rolling five-beat LCD mean are used. Saved mean BPM averages accepted active-session beats only. No accepted beats produces an empty CSV field, displayed as unavailable in the app.
-
-The main loop does not call getIR()/safeCheck(250). It polls buffered samples instead, bounds Wire transfers to 5 ms, and disables pulse polling after a failed health probe so a missing pulse sensor does not stop the controls. Startup sensor configuration is separate from the button/session loop.
-
 ## Save, read and export
 
 Finish/save explicitly. A successful save enters DONE and retains the result. A failed verification enters PAUSED with **SAVE FAILED** and keeps reps/time for a long-START retry. The latest **20 combined squat/lateral-raise records** persist in EEPROM. The existing A1.x record layout, CRC, generation journal and overwrite order are unchanged.
@@ -68,8 +61,8 @@ Normal use produces **no continuous Serial output**. It does not require an open
 
 | Command | Result |
 |---|---|
-| version | # DEVICE,part_a,A2.2 |
-| status | Exercise, state, active milliseconds, reps, pulse-ready flag, START-pressed flag, EXERCISE-pressed flag |
+| version | # DEVICE,part_a,A2.3 |
+| status | Exercise, state, active milliseconds, reps, START-pressed flag, EXERCISE-pressed flag |
 | history | Workout rows and unwell counts for both exercises |
 | erase CONFIRM | Clears saved workouts and unwell reports while stopped |
 

@@ -1,4 +1,4 @@
-"""Part A history protocol, including missing beats and interrupted transfers."""
+"""Part A history protocol, including legacy records and interrupted transfers."""
 import csv
 import sys
 import tempfile
@@ -20,12 +20,12 @@ class PartAExportTests(unittest.TestCase):
         self.assertEqual(p.sent,b'history\n');self.assertEqual(metadata['device'],'part_a')
         return result
 
-    def test_auto_detection_and_optional_bpm(self):
-        rows=self.read([b'Z: 0 | Y: 0\n',HEADER,ROW,NO_BPM,END])
-        self.assertEqual(rows[0]['reps'],5);self.assertEqual(rows[0]['bpm_avg'],'72.3')
+    def test_auto_detection_accepts_both_generations(self):
+        new_header=HEADER.replace(b'bpm_avg,bpm_samples',b'reserved_1,reserved_2')
+        rows=self.read([b'Z: 0 | Y: 0\n',new_header,ROW,NO_BPM,END])
+        self.assertEqual(rows[0]['reps'],5)
         self.assertEqual(rows[0]['active_seconds'],'12.345')
-        self.assertEqual(rows[1]['reps'],0);self.assertEqual(rows[1]['bpm_avg'],'')
-        self.assertEqual(rows[1]['bpm_samples'],0)
+        self.assertEqual(rows[1]['reps'],0)
 
     def test_fragments_empty_and_duplicate_rows(self):
         self.assertEqual(len(self.read([HEADER,ROW[:10],ROW[10:],ROW,END])),1)
@@ -37,10 +37,8 @@ class PartAExportTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.read([HEADER,ROW,ROW.replace(b',5,',b',6,'),END])
         with self.assertRaises(ValueError):self.read([b'A_EVENT,part_a,pause_before_history\n'])
 
-    def test_invalid_and_absent_bpm_are_distinct(self):
-        for raw in ('ASAVED,1,squats,1,2,,3,1','ASAVED,1,squats,1,2,0,3,1',
-                    'ASAVED,1,squats,1,2,nan,3,1','ASAVED,1,squats,1,2,72,0,1',
-                    'ASAVED,1,squats,1,32768,,0,1','ASAVED,1,squats,-1,2,,0,1',
+    def test_invalid_workout_records(self):
+        for raw in ('ASAVED,1,squats,1,32768,,0,1','ASAVED,1,squats,-1,2,,0,1',
                     'ASAVED,1,treadmill,1,2,,0,1','ASAVED,1,squats,1,2,,0,0'):
             with self.subTest(raw=raw),self.assertRaises(ValueError):export.parse_a_saved(raw)
 
@@ -51,7 +49,8 @@ class PartAExportTests(unittest.TestCase):
             with path.open(newline='',encoding='utf-8-sig') as f:
                 reader=csv.DictReader(f);saved=list(reader)
                 self.assertEqual(reader.fieldnames,export.PART_A_COLUMNS)
-            self.assertEqual(saved[1]['bpm_avg'],'');self.assertTrue(saved[0]['exported_at_utc'])
+            self.assertNotIn('bpm_avg',saved[0]);self.assertNotIn('bpm_samples',saved[0])
+            self.assertTrue(saved[0]['exported_at_utc'])
             with self.assertRaises(FileExistsError):export.write_csv(path,rows,part_a=True)
 
 if __name__=='__main__':unittest.main()

@@ -4,15 +4,15 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A2.2 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `PartA/PartA.ino` — A2.3 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons; LiquidCrystal |
 | `HoldStation/HoldStation.ino` — B2.8 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
-Part A A2.2 clears both unwell counters during history erase and accepts the erase shortcut from the report screen. It retains the team's movement thresholds (including lateral raise 25), sensor pins, pulse data and saved workout format.
+Part A A2.3 uses the accelerometer, buttons and LCD for workout tracking. It retains the team's movement thresholds (including lateral raise 25), saved workout format and history erase shortcut.
 
 ## Upload Part A
 
-1. Install **LiquidCrystal by Arduino** and **SparkFun MAX3010x Pulse and Proximity Sensor Library** in Arduino IDE's Library Manager.
+1. Install **LiquidCrystal by Arduino** in Arduino IDE's Library Manager.
 2. Open `PartA/PartA.ino`, keeping all four files in that folder together.
 3. Select **Arduino Uno R4 Minima** and its USB port (COM6 on the current prototype), then Upload. Keep the accelerometer still during startup calibration.
 4. Keep the original working wiring. Pin assignments and tests are in [PART_A.md](docs/PART_A.md).
@@ -21,7 +21,7 @@ Part A A2.2 clears both unwell counters during history erase and accepts the era
 
 **Saving:** finish explicitly before switching, or cancel a paused attempt. Pausing alone does not finish/save. Failed saves keep the pending attempt paused for retry. The latest **20 combined Part A summaries** survive power cycles; newer saves replace the oldest. Existing A1.x saved records remain readable. Unfinished RAM sessions are lost when power is removed.
 
-Each Part A record contains exercise, reps, active milliseconds excluding pauses, optional mean accepted BPM, beat-sample count, session ID and archive generation. The original LCD's rolling BPM display is preserved. Saved mean BPM uses accepted beats during active exercise only; no beats means **unavailable**, not zero.
+Each Part A record contains exercise, reps, active milliseconds excluding pauses, session ID and archive generation.
 
 ## Use the Windows app
 
@@ -81,7 +81,7 @@ for the selected exercise and shows the station total. Press MODE to
 acknowledge the message. The cancelled attempt does not count as a completed
 exercise.
 
-## Part A symptom reports — A2.2
+## Part A symptom reports — A2.3
 
 Pause with START, hold EXERCISE for 2 seconds, then confirm **Cancel attempt**
 with START. Answer **Feeling unwell?** with START for Yes or EXERCISE for No.
@@ -116,7 +116,7 @@ python tests/run_tests.py
 python -m unittest discover -s tests -p 'test_*.py'
 ```
 
-C++ tests require g++. Python tests require `requirements.txt`. CI compiles the firmware and builds/tests the Windows executable. [VALIDATION.md](VALIDATION.md) separates simulated/build checks from physical testing. No physical board is connected to CI; placement, echo quality, motion accuracy and pulse contact still need bench testing.
+C++ tests require g++. Python tests require `requirements.txt`. CI compiles the firmware and builds/tests the Windows executable. [VALIDATION.md](VALIDATION.md) separates simulated/build checks from physical testing. No physical board is connected to CI; placement, echo quality, and motion accuracy still need bench testing.
 
 No license is chosen on the team's behalf. Third-party libraries are installed separately under their own licenses. Participant data and exports are excluded from Git.
 
