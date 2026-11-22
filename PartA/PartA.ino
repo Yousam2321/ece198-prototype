@@ -38,7 +38,8 @@ PartASerialLink<decltype(Serial)> serialLink(Serial);
 Session session;
 Key startKey,exerciseKey;
 uint8_t currentExercise=0; // 0=squats, 1=lateral raises, 2=treadmill
-const unsigned treadmillBpmLimit=0; // Set only to a participant-specific prescribed limit.
+// Bench demonstration only. true uses fictional pulse data in Treadmill mode.
+constexpr bool treadmillDemo=false;
 Treadmill treadmill;
 uint16_t repCount=0;
 uint32_t bpmSumTenths=0,lastBeatAt=0;
@@ -151,7 +152,7 @@ void serviceButtons(uint32_t now){
     if(exEvent==TAP || exEvent==HOLD){
       if(treadmill.idle() && exEvent==TAP){currentExercise=0;resetAttempt(now);}
       else treadmill.enter(Treadmill::STOPPED,now);
-    }else if(goEvent==TAP)treadmill.go(now,treadmillBpmLimit);
+    }else if(goEvent==TAP)treadmill.go(now,treadmillDemo);
     else if(goEvent==HOLD && !treadmill.idle())treadmill.enter(Treadmill::STOPPED,now);
     return;
   }
@@ -314,35 +315,42 @@ void setLine(uint8_t row,const char* value){
 }
 void renderTreadmill(uint32_t now,char* top,char* bottom){
   switch(treadmill.phase){
-    case Treadmill::READY: strcpy(top,"TREADMILL READY");strcpy(bottom,"GO:start EX:next");break;
-    case Treadmill::BASELINE: strcpy(top,"Resting pulse");strcpy(bottom,"Hold finger");break;
+    case Treadmill::READY: strcpy(top,treadmillDemo?"Treadmill":"TREADMILL READY");strcpy(bottom,"GO:start EX:next");break;
+    case Treadmill::BASELINE: strcpy(top,treadmillDemo?"Rest pulse":"Resting pulse");strcpy(bottom,treadmillDemo?"Simulated BPM":"Hold finger");break;
     case Treadmill::WORKOUT:{
       bool walk=Treadmill::walking(treadmill.elapsed);
       unsigned sec=(treadmill.boundary()-treadmill.elapsed+999)/1000;
       snprintf(top,24,"%s %u:%02u",walk?"WALK":"RUN",sec/60,sec%60);
-      if(walk && !treadmill.checked)strcpy(bottom,"Place finger");
+      if(walk && !treadmill.checked)strcpy(bottom,treadmillDemo?"Simulated BPM":"Place finger");
+      else if(walk && !treadmillDemo && treadmill.baseline && (uint32_t(now-treadmill.phaseAt)/3000)%2)
+        snprintf(bottom,24,"Rest %u BPM",treadmill.baseline);
       else if(walk)snprintf(bottom,24,"Pulse %u BPM",treadmill.bpm);
       else if(treadmill.missed && uint32_t(now-treadmill.phaseAt)<3000)strcpy(bottom,"No reading");
       else strcpy(bottom,"EX: stop");
       break;
     }
-    case Treadmill::FINAL_CHECK: strcpy(top,"Final pulse");strcpy(bottom,"Hold finger");break;
+    case Treadmill::FINAL_CHECK: strcpy(top,"Final pulse");strcpy(bottom,treadmillDemo?"Simulated BPM":"Hold finger");break;
     case Treadmill::ALERT:{
       unsigned page=(uint32_t(now-treadmill.phaseAt)/3000)%3;
-      if(page==0){strcpy(top,"BPM above limit");strcpy(bottom,"Stop and rest");}
-      else if(page==1){strcpy(top,"Feeling unwell?");strcpy(bottom,"See instructor");}
-      else {strcpy(top,treadmill.missed?"No reading":"If feeling well");strcpy(bottom,"GO: retake pulse");}
+      if(page==0){strcpy(top,"BPM high");strcpy(bottom,"Stop and rest");}
+      else if(page==1){strcpy(top,"Unwell?");strcpy(bottom,"See instructor");}
+      else {strcpy(top,"Pulse check");strcpy(bottom,"GO: retake pulse");}
       break;
     }
-    case Treadmill::RETAKE: strcpy(top,"Retake pulse");strcpy(bottom,"Hold finger");break;
+    case Treadmill::RETAKE: strcpy(top,"Retake BPM");strcpy(bottom,"Simulated BPM");break;
     case Treadmill::RESUME:
-      strcpy(top,"BPM below limit");strcpy(bottom,treadmill.resumePhase==Treadmill::FINAL_CHECK?"GO:finish EX:end":"GO:resume EX:end");break;
+      strcpy(top,"Retake OK");strcpy(bottom,treadmill.resumePhase==Treadmill::FINAL_CHECK?"GO:finish EX:end":"GO:resume EX:end");break;
     case Treadmill::DONE:
-      strcpy(top,"Workout complete");
+      strcpy(top,treadmillDemo?"Complete":"Workout complete");
       if(treadmill.missed)strcpy(bottom,"No reading");
       else snprintf(bottom,24,"Final %u BPM",treadmill.bpm);
       break;
-    case Treadmill::STOPPED: strcpy(top,"Workout stopped");strcpy(bottom,"GO:new EX:next");break;
+    case Treadmill::STOPPED: strcpy(top,treadmillDemo?"Stopped":"Workout stopped");strcpy(bottom,"GO:new EX:next");break;
+  }
+  if(treadmillDemo){
+    size_t labelLength=strlen(top);
+    memmove(top+5,top,labelLength+1);
+    memcpy(top,"DEMO ",5);
   }
 }
 
@@ -488,7 +496,8 @@ void loop(){
   serviceButtons(now);
   if(currentExercise==2 && treadmill.measuring() && !wasMeasuring)clearPulseReading();
   serviceAccelerometer(millis());
-  if(!calibrating)servicePulse(millis());
+  if(currentExercise==2 && treadmillDemo)treadmill.simulatedPulse(millis());
+  else if(!calibrating)servicePulse(millis());
   renderDisplay();
   serviceSerial(millis());
 }

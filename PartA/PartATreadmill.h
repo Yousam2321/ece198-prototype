@@ -3,15 +3,21 @@
 
 struct Treadmill {
   enum Phase { READY, BASELINE, WORKOUT, FINAL_CHECK, ALERT, RETAKE, RESUME, DONE, STOPPED };
+  // Fictional inputs and ratios for showing the workflow on the bench.
+  static constexpr unsigned demoRestingBpm=70;
+  static constexpr unsigned demoAlertMultiplier=2;
+  static constexpr unsigned demoRetakePercent=80;
   Phase phase=READY, resumePhase=READY;
   uint32_t elapsed=0, last=0, phaseAt=0, firstBeat=0, lastBeat=0, sum=0;
   unsigned beats=0, bpm=0, baseline=0, high=0, alertLimit=0;
-  bool checked=false, missed=false;
+  bool checked=false, missed=false, demo=false;
   static bool walking(uint32_t t){return (t>=180000 && t<240000)||(t>=420000 && t<480000);}
   void resetWindow(){beats=0;sum=0;}
   void enter(Phase next,uint32_t now){phase=next;phaseAt=last=now;resetWindow();}
-  void start(uint32_t now,unsigned limit){
-    *this=Treadmill();alertLimit=limit;enter(BASELINE,now);
+  void start(uint32_t now,bool simulate=false){
+    *this=Treadmill();
+    demo=simulate;
+    enter(BASELINE,now);
   }
   bool measuring() const {
     return phase==BASELINE || phase==FINAL_CHECK || phase==RETAKE ||
@@ -24,14 +30,19 @@ struct Treadmill {
     lastBeat=now;sum+=estimate;++beats;
     if(uint32_t(now-firstBeat)<15000)return;
     bpm=(sum+beats/2)/beats;resetWindow();missed=false;
-    if(phase==BASELINE){baseline=bpm;enter(WORKOUT,now);return;}
+    if(phase==BASELINE){
+      baseline=bpm;
+      if(demo)alertLimit=baseline*demoAlertMultiplier;
+      enter(WORKOUT,now);
+      return;
+    }
     if(phase==RETAKE){
-      if(bpm<=alertLimit && bpm<high)enter(RESUME,now);
+      if(bpm<=alertLimit && uint32_t(bpm)*100<=uint32_t(high)*demoRetakePercent)enter(RESUME,now);
       else enter(ALERT,now);
       return;
     }
     checked=true;
-    if(alertLimit && bpm>alertLimit){
+    if(demo && alertLimit && bpm>alertLimit){
       high=bpm;resumePhase=phase;enter(ALERT,now);
     }else if(phase==FINAL_CHECK)enter(DONE,now);
   }
@@ -63,8 +74,15 @@ struct Treadmill {
     if(elapsed<480000)return 480000;
     return 660000;
   }
-  void go(uint32_t now,unsigned limit){
-    if(phase==READY || phase==DONE || phase==STOPPED)start(now,limit);
+  void simulatedPulse(uint32_t now){
+    if(!demo || !measuring() || (beats && uint32_t(now-lastBeat)<1000))return;
+    if(phase==BASELINE)beat(demoRestingBpm,now);
+    else if(phase==RETAKE)beat(120,now);
+    else if(phase==FINAL_CHECK)beat(115,now);
+    else beat(elapsed<240000?160:125,now);
+  }
+  void go(uint32_t now,bool simulate=false){
+    if(phase==READY || phase==DONE || phase==STOPPED)start(now,simulate);
     else if(phase==ALERT)enter(RETAKE,now);
     else if(phase==RESUME)enter(resumePhase==FINAL_CHECK?DONE:WORKOUT,now);
   }
