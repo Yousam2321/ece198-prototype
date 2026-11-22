@@ -4,6 +4,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "desktop"))
 from test_export_sessions import Port
@@ -81,7 +82,7 @@ class SymptomImportTest(unittest.TestCase):
     def test_existing_reports_and_repeat_imports_after_upgrade(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "legacy.sqlite"
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 db.executescript("""
                     CREATE TABLE symptom_reports (participant TEXT, exercise TEXT, count INTEGER,
                         PRIMARY KEY(participant,exercise));

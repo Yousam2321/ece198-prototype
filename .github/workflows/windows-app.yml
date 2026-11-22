@@ -11,6 +11,7 @@ on:
     paths:
       - 'desktop/**'
       - 'tools/export_sessions.py'
+      - 'tests/test_*.py'
       - '.github/workflows/windows-app.yml'
   workflow_dispatch:
 permissions:
