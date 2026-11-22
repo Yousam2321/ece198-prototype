@@ -19,7 +19,7 @@ def criteria_text(targets, minimum, rep_minimum=90):
             f"Chest press: Good requires BOTH the good-rep target and at least {rep_minimum:g}% good reps.\n"
             "Good-rep percentage = good reps / completed attempts x 100. Short attempts count against it. Unfinished reps discarded by the firmware do not count as attempts. Zero attempts: Cannot evaluate.\n"
             "Each good rep reaches 80% of calibrated travel and returns within 20% of the start. Extra travel is allowed; there is no upper-travel penalty.\n\n"
-            "Part A squats/lateral raises: Good means the recorded rep count reaches the chosen target. No failed-attempt percentage is available. Active time and mean accepted BPM are informational, not scoring criteria.\n\n"
+            "Part A squats/lateral raises: Good means the recorded rep count reaches the chosen target. Active time is shown for reference.\n\n"
             "No valid hold or missing ending data: Cannot evaluate. Missing echoes may reduce credited results. These are distance measures, not a full-body form or medical grade.\n"
             "Comparisons use the current confirmed goals. Changed chest calibration is flagged. Attempt order is not a calendar date.")
 
@@ -50,15 +50,11 @@ def normalize_rep(row):
 
 
 def normalize_count(row):
-    item={key:int(row[key]) for key in ('session_id','active_ms','reps','bpm_samples','history_id')}
+    item={key:int(row[key]) for key in ('session_id','active_ms','reps','history_id')}
     item['exercise']=row['exercise']
-    value=row.get('bpm_avg');item['bpm_avg']=None if value is None or not str(value).strip() else float(value)
-    bpm=item['bpm_avg']
     if (item['session_id']<1 or item['history_id']<1 or not 0<=item['active_ms']<=4294967295 or
-        not 0<=item['reps']<=32767 or not 0<=item['bpm_samples']<=65535 or
-        (item['bpm_samples']>0 and (bpm is None or not math.isfinite(bpm) or not 40<=bpm<=180)) or
-        (item['bpm_samples']==0 and bpm is not None)):
-        raise ValueError('Invalid Part A session. Check rep counts and optional BPM data.')
+        not 0<=item['reps']<=32767):
+        raise ValueError('Invalid Part A session. Check rep counts and active time.')
     return item
 
 
@@ -166,7 +162,7 @@ def evaluate_count(row,targets):
     target=targets.get(row['exercise']);remaining=max(0,target-row['reps']) if target else None
     return dict(kind='counts',status='Cannot evaluate' if target is None else 'Good' if not remaining else 'Not good yet',
                 missing_target=target is None,rep_count=row['reps'],target_reps=target,remaining_reps=remaining,
-                active_seconds=row['active_ms']/1000,bpm_avg=row['bpm_avg'],bpm_samples=row['bpm_samples'],
+                active_seconds=row['active_ms']/1000,
                 reasons=['Set and confirm a rep target for this exercise.'] if target is None else
                         [f'{remaining:g} more reps needed.'] if remaining else ['The recorded rep count met the target.'])
 
@@ -263,12 +259,28 @@ class ResultStore:
         participant=participant.strip()
         if not participant: raise ValueError("Enter a participant label.")
         count = 0
+        count_keys = None
         with self.db:
-            if symptoms:
-                self.db.execute("BEGIN IMMEDIATE")
+            self.db.execute("BEGIN IMMEDIATE")
             for row in rows:
+                if row['exercise'] in COUNT_EXERCISES:
+                    if count_keys is None:
+                        # Old database keys included pulse fields. Compare the workout
+                        # itself so either CSV version can be reimported safely.
+                        count_keys = set()
+                        for (payload,) in self.db.execute('SELECT payload FROM sessions WHERE participant=?', (participant,)):
+                            saved = json.loads(payload)
+                            if saved['exercise'] in COUNT_EXERCISES:
+                                count_keys.add(record_key(normalize_count(saved)))
+                    row = normalize_count(row)
+                    key = record_key(row)
+                    if key in count_keys:
+                        continue
+                    count_keys.add(key)
+                else:
+                    key = record_key(row)
                 cur = self.db.execute("INSERT OR IGNORE INTO sessions VALUES (?,?,?,?)",
-                                      (participant, record_key(row), datetime.now(timezone.utc).isoformat(), json.dumps(row)))
+                                      (participant, key, datetime.now(timezone.utc).isoformat(), json.dumps(row)))
                 count += cur.rowcount
             for exercise,new in self.pending_symptoms(participant,symptoms).items():
                 self.db.execute("""INSERT INTO participant_symptom_imports VALUES (?,?,?,?,?)

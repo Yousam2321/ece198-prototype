@@ -84,14 +84,13 @@ def _header(c,participant,page,total,exercise,band):
 def _table(c,top,entries,targets,minimum,rep_minimum=90,all_rows=None):
     chest=entries[0][1]['exercise']=='chest_press'
     counts=entries[0][1]['exercise'] in COUNT_EXERCISES
-    data=[['Session','Reps / goal','Active','Mean BPM','Result and reason']] if counts else [['Session','Good / goal','Good %','Travel','Result and reason']] if chest else [['Session','Held / goal','Consistency','Result and reason']]
+    data=[['Session','Reps / goal','Active','Result and reason']] if counts else [['Session','Good / goal','Good %','Travel','Result and reason']] if chest else [['Session','Held / goal','Consistency','Result and reason']]
     for index,row in entries:
         r=evaluate(row,targets,minimum,rep_minimum)
         number=attempt_number(all_rows,index) if all_rows else index+1
         if counts:
-            bpm='Unavailable' if r['bpm_avg'] is None else f"{r['bpm_avg']:.1f}"
             text=result_label(r,minimum)+'\n'+short_feedback(r,minimum)
-            data.append([str(number),f"{r['rep_count']} / {r['target_reps']:g}",f"{r['active_seconds']:.1f}s",bpm,Paragraph(escape(text).replace('\n','<br/>'),SMALL)])
+            data.append([str(number),f"{r['rep_count']} / {r['target_reps']:g}",f"{r['active_seconds']:.1f}s",Paragraph(escape(text).replace('\n','<br/>'),SMALL)])
         elif chest:
             pct='Unavailable' if r['good_rep_percent'] is None else f"{r['good_rep_percent']:.1f}%"
             text=result_label(r,rep_minimum)+'\n'+short_feedback(r,rep_minimum)
@@ -101,7 +100,7 @@ def _table(c,top,entries,targets,minimum,rep_minimum=90,all_rows=None):
             pct='Unavailable' if r['consistency_percent'] is None else f"{r['consistency_percent']:.1f}%"
             text=result_label(r,minimum)+'\n'+short_feedback(r,minimum)
             data.append([str(number),f"{r['in_band_seconds']:.1f}s / {r['target_seconds']:g}s",pct,Paragraph(escape(text).replace('\n','<br/>'),SMALL)])
-    table=Table(data,colWidths=[48,76,58,57,CONTENT-239] if chest or counts else [48,88,82,CONTENT-218])
+    table=Table(data,colWidths=[48,76,58,57,CONTENT-239] if chest else [48,88,82,CONTENT-218])
     table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),INK),('TEXTCOLOR',(0,0),(-1,0),colors.white),
         ('FONTNAME',(0,0),(-1,0),'Report-Bold'),('FONTNAME',(0,1),(-1,-1),'Report'),
@@ -220,10 +219,10 @@ def _count_summary(c,rows,entries,targets,minimum,rep_minimum):
     c.setFont('Report-Bold',13);c.drawString(LEFT,top-22,result_label(r,minimum))
     top=paragraph(c,short_feedback(r,minimum),LEFT,top-32,CONTENT)
     top-=15
-    bpm='Unavailable' if r['bpm_avg'] is None else f"{r['bpm_avg']:.1f}"
-    cards=[('Recorded reps / goal',f"{r['rep_count']} / {r['target_reps']:g}"),('Active time',f"{r['active_seconds']:.1f}s"),('Mean BPM',bpm),('Beat samples',str(r['bpm_samples']))]
+    cards=[('Recorded reps / goal',f"{r['rep_count']} / {r['target_reps']:g}"),('Active time',f"{r['active_seconds']:.1f}s")]
+    card_width=(CONTENT-6)/2
     for i,(label,value) in enumerate(cards):
-        x=LEFT+i*(CONTENT/4);c.setFillColor(LIGHT);c.roundRect(x,top-57,CONTENT/4-6,57,5,stroke=0,fill=1)
+        x=LEFT+i*(card_width+6);c.setFillColor(LIGHT);c.roundRect(x,top-57,card_width,57,5,stroke=0,fill=1)
         c.setFillColor(MUTED);c.setFont('Report',7);c.drawString(x+8,top-16,label)
         c.setFillColor(INK);c.setFont('Report-Bold',12);c.drawString(x+8,top-37,value)
     top-=83

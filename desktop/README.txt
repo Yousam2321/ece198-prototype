@@ -54,9 +54,8 @@ conditions rather than a normalized improvement score. No hidden weighted score.
 Part A evaluation: the recorded rep count must reach its confirmed goal. A good
 result means that count goal was met, not that full movement form was assessed.
 The original detector does not save failed attempts, so there is no good-rep
-percentage or hold consistency for A. Active time excludes pauses. Mean BPM uses
-accepted beats during active exercise; missing beats display Unavailable. BPM
-and active time do not change the verdict. Graphs compare the same exercise only.
+percentage or hold consistency for A. Active time excludes pauses and is shown
+for reference. Graphs compare the same exercise only.
 Part A saves on long START (3 seconds) and keeps the result on screen.
 One START tap starts a new attempt. EXERCISE switches only at READY/DONE;
 hold EXERCISE 2 seconds while paused to cancel without saving. The latest 20

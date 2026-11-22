@@ -1,5 +1,7 @@
 """Part A scoring, serial import, profile migration and reports."""
 import sys
+import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,7 +27,7 @@ class PartAAppTests(unittest.TestCase):
         a=e.evaluate(count(),TARGETS,90,90)
         self.assertEqual(result_label(a,90),'Good - rep target met')
         self.assertNotIn('good_rep_percent',a);self.assertNotIn('consistency_percent',a)
-        self.assertIsNone(a['bpm_avg']);self.assertEqual(short_feedback(a,90),'Recorded rep target met.')
+        self.assertNotIn('bpm_avg',a);self.assertEqual(short_feedback(a,90),'Recorded rep target met.')
         a=e.evaluate(count(reps=3),TARGETS,90,90)
         self.assertEqual(a['remaining_reps'],2);self.assertIn('2 more reps',short_feedback(a,90))
         self.assertEqual(e.evaluate(count(reps=0),TARGETS,90)['status'],'Not good yet')
@@ -33,11 +35,10 @@ class PartAAppTests(unittest.TestCase):
         for target in (0,1.5,32768,float('nan')):
             with self.assertRaises(ValueError):e.validate_criteria({'squats':target},90)
 
-    def test_mean_bpm_does_not_change_score(self):
+    def test_count_normalization_ignores_legacy_pulse_fields(self):
         for bpm,samples in ((None,0),(40,3),(180,3)):
-            self.assertEqual(e.evaluate(count(bpm=bpm,samples=samples),TARGETS,90)['status'],'Good')
-        for change in ({'bpm_avg':0,'bpm_samples':4},{'bpm_avg':72,'bpm_samples':0},
-                       {'bpm_avg':float('nan'),'bpm_samples':3},{'reps':-1}):
+            self.assertEqual(count(bpm=bpm,samples=samples),count())
+        for change in ({'active_ms':-1},{'reps':-1}):
             raw=count();raw.update(change)
             with self.assertRaises(ValueError):e.normalize(raw)
 
@@ -46,7 +47,8 @@ class PartAAppTests(unittest.TestCase):
         rows,notice=read_all_history(p,timeout=2,clock=p.clock)
         self.assertEqual(p.sent,b'history\n');self.assertEqual(notice,'')
         self.assertEqual([r['exercise'] for r in rows],['squats','lateral_raises'])
-        self.assertEqual(rows[0]['bpm_avg'],72.3);self.assertIsNone(rows[1]['bpm_avg'])
+        self.assertEqual([r['reps'] for r in rows],[5,0])
+        self.assertTrue(all('bpm_avg' not in r and 'bpm_samples' not in r for r in rows))
 
     def test_existing_profiles_duplicate_imports_and_row_deletion(self):
         with tempfile.TemporaryDirectory() as d:
@@ -56,13 +58,20 @@ class PartAAppTests(unittest.TestCase):
             self.assertEqual(len(store.load('P')),2);self.assertNotIn('squats',store.criteria('P')['targets'])
             self.assertEqual(store.add('P',[count(),count(exercise='lateral_raises')]),2)
             self.assertEqual(store.add('P',[count()]),0)
+            legacy=dict(count(2),bpm_avg=72.3,bpm_samples=4)
+            with store.db:
+                store.db.execute('INSERT INTO sessions VALUES (?,?,?,?)',('P',e.record_key(legacy),'2026-01-01',json.dumps(legacy)))
+            self.assertEqual(store.add('P',[count(2)]),0)
             store.save_criteria('P',TARGETS,90)
-            rows=store.load('P');self.assertEqual([r['exercise'] for r in rows],['wall_sit','chest_press','squats','lateral_raises'])
+            rows=store.load('P');self.assertEqual([r['exercise'] for r in rows],['wall_sit','chest_press','squats','squats','lateral_raises'])
             exported=Path(d)/'evaluated.csv';export_assessment_csv(exported,'P',rows,TARGETS,90)
+            with exported.open(encoding='utf-8-sig',newline='') as source:
+                headers=csv.DictReader(source).fieldnames
+                self.assertNotIn('bpm_avg',headers);self.assertNotIn('bpm_samples',headers)
             imported=e.load_csv(exported);self.assertEqual(store.add('P',imported),0)
-            selected=next(r for r in rows if r['exercise']=='squats')
+            selected=next(r for r in rows if r['exercise']=='squats' and r['session_id']==2)
             self.assertEqual(store.delete_row('P',selected),1)
-            self.assertEqual(len(store.load('P')),3);self.assertEqual(store.criteria('P')['targets']['squats'],5)
+            self.assertEqual(len(store.load('P')),4);self.assertEqual(store.criteria('P')['targets']['squats'],5)
             self.assertIn('P',store.participants());store.close()
 
     def test_progression_only_compares_the_same_exercise(self):
@@ -71,7 +80,7 @@ class PartAAppTests(unittest.TestCase):
         self.assertEqual(change['rep_change'],5)
         self.assertIn('reps +5',progress_summary(rows,2,change))
         self.assertIsNone(e.progression(rows,3,TARGETS,90))
-        self.assertEqual(preview_values(rows[0])[3:6],('2 reps','No BPM','Count only'))
+        self.assertEqual(preview_values(rows[0])[3:6],('2 reps','','Count only'))
 
     def test_all_five_exercises_and_count_only_reports(self):
         with tempfile.TemporaryDirectory() as d:

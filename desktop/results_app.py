@@ -332,8 +332,7 @@ class ResultsApp:
         color={"Good":"#16734a","Not good yet":"#ae4b1a","Cannot evaluate":"#586b7e"}[r["status"]]
         self.verdict.configure(text=result_label(r,threshold),fg=color)
         if counts:
-            bpm='Unavailable' if r['bpm_avg'] is None else f"{r['bpm_avg']:.1f}"
-            self.stats.set(f"Recorded reps {r['rep_count']} / goal {r['target_reps']:g} | Active {r['active_seconds']:.1f}s\nMean accepted BPM: {bpm} | Accepted beat samples: {r['bpm_samples']} (informational)")
+            self.stats.set(f"Recorded reps {r['rep_count']} / goal {r['target_reps']:g} | Active {r['active_seconds']:.1f}s")
         elif chest:
             pct='Unavailable' if r['good_rep_percent'] is None else f"{r['good_rep_percent']:.1f}%"
             self.stats.set(f"Good reps {r['good_reps']} / goal {r['target_reps']:g} | {r['short_attempts']} short of {r['attempts']} attempts | Good reps {pct} / goal {rep_minimum:g}%\n"
@@ -573,12 +572,12 @@ def smoke_test():
         for w in root.winfo_children():
             if isinstance(w,tk.Toplevel):w.destroy()
         # Import Part A into the same pre-existing B profile. No migration or
-        # profile reset is needed; optional BPM and zero counts remain distinct.
+        # profile reset is needed.
         assert app.squats.get()=='5' and app.raises.get()=='5'
         part_a=[normalize(dict(session_id=i,exercise=exercise,active_ms=20000+i*1000,
-                    reps=reps,bpm_avg=bpm,bpm_samples=4 if bpm else 0,history_id=1))
+                    reps=reps,history_id=1))
                 for exercise in COUNT_EXERCISES
-                for i,reps,bpm in ((1,2,None),(2,5,72.3),(3,8,75.1))]
+                for i,reps in ((1,2),(2,5),(3,8))]
         popup=app.preview_import(part_a,'Synthetic Part A CSV');root.update();popup.destroy()
         app.store.add('Participant 1',part_a);app.rows=app.store.load('Participant 1')
         app.squats.set('5');app.raises.set('8');app.accept_criteria(*app.criteria());root.update()
@@ -618,10 +617,12 @@ def smoke_test():
             index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==1)
             app.table.selection_set(str(index));app.show_selected();root.update()
             assert app.verdict.cget('text')=='Not good yet - rep count'
-            assert 'Unavailable' in app.stats.get() and 'more reps.' in app.feedback.get()
+            target=app.criteria()[0][exercise]
+            assert app.stats.get()==f'Recorded reps 2 / goal {target:g} | Active 21.0s'
+            assert 'more reps.' in app.feedback.get()
             index=next(i for i,r in enumerate(app.rows) if r['exercise']==exercise and r['session_id']==3)
             app.table.selection_set(str(index));app.show_selected();root.update()
-            assert app.verdict.cget('text')=='Good - rep target met' and '75.1' in app.stats.get()
+            assert app.verdict.cget('text')=='Good - rep target met' and 'Active 23.0s' in app.stats.get()
             assert app.table.item(str(index),'values')[3]=='Count only'
             app.show_progress();root.after(150);root.update()
             for w in root.winfo_children():

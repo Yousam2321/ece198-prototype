@@ -37,9 +37,9 @@ Download **ECE198-Results-Windows** from a successful [Build Windows results app
 |---|---|
 | Wall sit / plank | In-band duration reaches the target **and** consistency reaches its requirement. Consistency = in-band / (active − final continuous departure). Pauses and final departure are excluded; earlier departures followed by return still count. |
 | Chest press | Good-rep count reaches its target **and** good reps / completed attempts reaches its requirement. Firmware uses 80% press / 20% return thresholds. |
-| Squats / lateral raises | Recorded rep count reaches its target. Active time and mean accepted BPM are supporting stats. The original Part A sketch does not record failed attempts or a good-rep percentage. |
+| Squats / lateral raises | Recorded rep count reaches its target. Active time is shown for reference. |
 
-Percentage defaults are editable prototype settings. Part A has no invented quality percentage or BPM-based verdict. Comparisons use the same exercise and current confirmed goals; board IDs are not calendar dates. CSV/report exports preserve raw measurements. Delete selected row removes one local row; Manage participants removes a complete profile after confirmation. Board saves and exported files are separate.
+Percentage defaults are editable prototype settings. Comparisons use the same exercise and current confirmed goals; board IDs are not calendar dates. App exports include workout measurements and unwell counts. Delete selected row removes one local row; Manage participants removes a complete profile after confirmation. Board saves and exported files are separate.
 
 See [desktop/README.txt](desktop/README.txt) for details.
 
