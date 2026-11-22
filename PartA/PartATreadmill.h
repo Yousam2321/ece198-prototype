@@ -9,6 +9,7 @@ struct Treadmill {
   static constexpr unsigned demoRestingBpm=70;
   Phase phase=READY, resumePhase=READY;
   uint32_t elapsed=0, last=0, phaseAt=0, firstBeat=0, lastBeat=0, sum=0;
+  uint32_t readingAt=0;
   unsigned beats=0, bpm=0, baseline=0, high=0, alertLimit=0;
   bool checked=false, missed=false, demo=false;
   static bool walking(uint32_t t){return (t>=180000 && t<240000)||(t>=420000 && t<480000);}
@@ -29,7 +30,7 @@ struct Treadmill {
     if(!beats)firstBeat=now;
     lastBeat=now;sum+=estimate;++beats;
     if(uint32_t(now-firstBeat)<15000)return;
-    bpm=(sum+beats/2)/beats;resetWindow();missed=false;
+    bpm=(sum+beats/2)/beats;readingAt=now;resetWindow();missed=false;
     if(phase==BASELINE){
       baseline=bpm;
       alertLimit=baseline*paceMultiplier;

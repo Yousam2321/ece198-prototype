@@ -138,7 +138,7 @@ int main(int argc,char** argv){
   beginAttempt();go();assert(session.state==PAUSED);go();finish();
   assert(session.state==DONE && sessionArchive.latestId()==2);
   Serial.space=64;Serial.output.clear();commandA("version\n");
-  assert(Serial.output=="# DEVICE,part_a,A2.2\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.3\n");
   Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
   assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);
@@ -194,18 +194,27 @@ int main(int argc,char** argv){
       advanceA(interval-10);fakeBeat=true;advanceA(10);
     }
   };
-  pulseFor(857,20);
+  pulseFor(857,20);advanceA(120);
   assert(treadmill.baseline==70 && treadmill.alertLimit==140 && !treadmill.demo);
+  assert(lcd.rows[1].find("Rest 70 BPM")==0);
   advanceA(180000-treadmill.elapsed);
   pulseFor(375,44);advanceA(120);
   assert(treadmill.phase==Treadmill::ALERT && treadmill.high==160);
-  assert(lcd.rows[0].find("Above pace goal")==0);
+  assert(lcd.rows[0].find("Take a break")==0);
+  assert(lcd.rows[1].find("Pulse 160 BPM")==0);
   uint32_t treadmillTime=treadmill.elapsed;
   go();assert(treadmill.phase==Treadmill::RETAKE);
   pulseFor(500,32);advanceA(500);
   assert(treadmill.phase==Treadmill::RESUME && treadmill.elapsed==treadmillTime);
+  assert(lcd.rows[0].find("120 BPM")==0);
   assert(lcd.rows[1].find("GO:resume")==0);
   go();assert(treadmill.phase==Treadmill::WORKOUT && treadmill.elapsed>treadmillTime);
+  advanceA(420000-treadmill.elapsed);
+  pulseFor(600,28);advanceA(120);
+  assert(lcd.rows[0].find("WALK")==0 && lcd.rows[1].find("Pulse 100 BPM")==0);
+  advanceA(660000-treadmill.elapsed);
+  pulseFor(750,23);advanceA(120);
+  assert(treadmill.phase==Treadmill::DONE && lcd.rows[1].find("Final 80 BPM")==0);
   testArchive();
   std::cout<<"PASS: A2 state/buttons, repeated saves/restarts, detector criteria, pulse polling, "
              "all-state erase/cancel, timing, stalled/closed COM exports, legacy persistence and power-loss checks\n";
