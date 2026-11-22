@@ -138,7 +138,7 @@ int main(int argc,char** argv){
   beginAttempt();go();assert(session.state==PAUSED);go();finish();
   assert(session.state==DONE && sessionArchive.latestId()==2);
   Serial.space=64;Serial.output.clear();commandA("version\n");
-  assert(Serial.output=="# DEVICE,part_a,A2.1\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.2\n");
   Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
   assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);
@@ -182,6 +182,30 @@ int main(int argc,char** argv){
   wrapped.tick(100);assert(wrapped.active==301);
   wrapped.state=PAUSED;wrapped.tick(500);assert(wrapped.active==301);
   wrapped.state=RUNNING;wrapped.tick(600);assert(wrapped.active==401);
+
+  // Exercise the default LCD/button path with live sensor input stubbed.
+  pulseSensorReady=true;fakeWireError=0;fakeIr=60000;
+  resetAttempt(fakeNow);currentExercise=0;
+  next();next();advanceA(120);
+  assert(lcd.rows[0].find("TREADMILL READY")==0);
+  go();
+  auto pulseFor=[&](unsigned interval,unsigned count){
+    for(unsigned i=0;i<count;++i){
+      advanceA(interval-10);fakeBeat=true;advanceA(10);
+    }
+  };
+  pulseFor(857,20);
+  assert(treadmill.baseline==70 && treadmill.alertLimit==140 && !treadmill.demo);
+  advanceA(180000-treadmill.elapsed);
+  pulseFor(375,44);advanceA(120);
+  assert(treadmill.phase==Treadmill::ALERT && treadmill.high==160);
+  assert(lcd.rows[0].find("Above pace goal")==0);
+  uint32_t treadmillTime=treadmill.elapsed;
+  go();assert(treadmill.phase==Treadmill::RETAKE);
+  pulseFor(500,32);advanceA(500);
+  assert(treadmill.phase==Treadmill::RESUME && treadmill.elapsed==treadmillTime);
+  assert(lcd.rows[1].find("GO:resume")==0);
+  go();assert(treadmill.phase==Treadmill::WORKOUT && treadmill.elapsed>treadmillTime);
   testArchive();
   std::cout<<"PASS: A2 state/buttons, repeated saves/restarts, detector criteria, pulse polling, "
              "all-state erase/cancel, timing, stalled/closed COM exports, legacy persistence and power-loss checks\n";

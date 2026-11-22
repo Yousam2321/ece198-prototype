@@ -1,5 +1,5 @@
 /*
- * ECE198 Part A A2.1 -- explicit session controller, as used by Part B.
+ * ECE198 Part A A2.2 -- explicit session controller, as used by Part B.
  * Arduino Uno R4 Minima. Existing wiring and exercise criteria are retained.
  * START D2 -> GND; EXERCISE D3 -> GND (INPUT_PULLUP).
  * MMA7361: X=A0, Y=A1, Z=A2. LCD: RS=7, E=8, data=9,10,11,12.
@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #if defined(ARDUINO_ARCH_AVR)
-#error "Part A A2.1 targets the Uno R4 Minima. Select that board; Part B uses the Uno R3."
+#error "Part A A2.2 targets the Uno R4 Minima. Select that board; Part B uses the Uno R3."
 #endif
 
 using namespace parta;
@@ -262,6 +262,7 @@ void serviceAccelerometer(uint32_t now){
 }
 void clearPulseReading(){
   displayBpm=0;beatSeen=false;validRates=rateSpot=0;
+  if(currentExercise==2 && !treadmillDemo && treadmill.measuring())treadmill.resetWindow();
 }
 void acceptPulseSample(uint32_t ir,uint32_t now){
   if(ir<FINGER_THRESHOLD){clearPulseReading();return;}
@@ -326,20 +327,22 @@ void renderTreadmill(uint32_t now,char* top,char* bottom){
         snprintf(bottom,24,"Rest %u BPM",treadmill.baseline);
       else if(walk)snprintf(bottom,24,"Pulse %u BPM",treadmill.bpm);
       else if(treadmill.missed && uint32_t(now-treadmill.phaseAt)<3000)strcpy(bottom,"No reading");
+      else if(!walk && !treadmill.baseline && treadmill.elapsed<3000)strcpy(bottom,"No baseline BPM");
       else strcpy(bottom,"EX: stop");
       break;
     }
     case Treadmill::FINAL_CHECK: strcpy(top,"Final pulse");strcpy(bottom,treadmillDemo?"Simulated BPM":"Hold finger");break;
     case Treadmill::ALERT:{
       unsigned page=(uint32_t(now-treadmill.phaseAt)/3000)%3;
-      if(page==0){strcpy(top,"BPM high");strcpy(bottom,"Stop and rest");}
+      if(page==0){strcpy(top,treadmillDemo?"Pace high":"Above pace goal");strcpy(bottom,"Take a break");}
       else if(page==1){strcpy(top,"Unwell?");strcpy(bottom,"See instructor");}
-      else {strcpy(top,"Pulse check");strcpy(bottom,"GO: retake pulse");}
+      else {strcpy(top,treadmill.missed?"No reading":treadmillDemo?"Pulse check":"If feeling well");strcpy(bottom,"GO: retake pulse");}
       break;
     }
-    case Treadmill::RETAKE: strcpy(top,"Retake BPM");strcpy(bottom,"Simulated BPM");break;
+    case Treadmill::RETAKE: strcpy(top,"Retake BPM");strcpy(bottom,treadmillDemo?"Simulated BPM":"Hold finger");break;
     case Treadmill::RESUME:
-      strcpy(top,"Retake OK");strcpy(bottom,treadmill.resumePhase==Treadmill::FINAL_CHECK?"GO:finish EX:end":"GO:resume EX:end");break;
+      strcpy(top,treadmillDemo?"Below goal":"If feeling well");
+      strcpy(bottom,treadmill.resumePhase==Treadmill::FINAL_CHECK?"GO:finish EX:end":"GO:resume EX:end");break;
     case Treadmill::DONE:
       strcpy(top,treadmillDemo?"Complete":"Workout complete");
       if(treadmill.missed)strcpy(bottom,"No reading");
@@ -366,7 +369,7 @@ void renderDisplay(bool force){
   else if(menu==NOTICE){strcpy(top,noticeTop);strcpy(bottom,noticeBottom);}
   else if(menu==ERASE_HOLD){strcpy(top,"Hold both 3 sec");strcpy(bottom,"History menu...");}
   else if(session.state==IDLE){
-    snprintf(top,sizeof(top),"%s A2.1 READY",screenName());strcpy(bottom,"GO:start EX:next");
+    snprintf(top,sizeof(top),"%s A2.2 READY",screenName());strcpy(bottom,"GO:start EX:next");
   }else if(session.state==COUNTDOWN){
     uint32_t elapsed=uint32_t(now-session.countdownAt);
     uint8_t seconds=elapsed>=3000?0:uint8_t(3-elapsed/1000);
@@ -421,7 +424,7 @@ void handleCommand(const char* value,uint32_t now){
   beginReply(NO_REPLY,now);queueLine("A_EVENT,part_a,command_not_available\n");
 }
 void prepareReply(){
-  if(reply==VERSION_REPLY){queueLine("# DEVICE,part_a,A2.1\n");reply=NO_REPLY;}
+  if(reply==VERSION_REPLY){queueLine("# DEVICE,part_a,A2.2\n");reply=NO_REPLY;}
   else if(reply==STATUS_REPLY){
     snprintf(tx,sizeof(tx),"A_STATUS,%s,%s,%lu,%u,%u,%u,%u\n",exerciseName(),stateName(session.state),
       (unsigned long)session.active,repCount,pulseSensorReady?1:0,
@@ -472,7 +475,7 @@ void serviceSerial(uint32_t now){
 void setup(){
   Serial.begin(115200);
   pinMode(START_BUTTON,INPUT_PULLUP);pinMode(EXERCISE_BUTTON,INPUT_PULLUP);
-  lcd.begin(16,2);lcd.clear();setLine(0,"PART A A2.1");setLine(1,"Starting...");
+  lcd.begin(16,2);lcd.clear();setLine(0,"PART A A2.2");setLine(1,"Starting...");
   Wire.begin();
 #if defined(ARDUINO_ARCH_RENESAS_UNO) || defined(WIRE_HAS_TIMEOUT)
   Wire.setWireTimeout(5000,true); // A sensor fault must not wait indefinitely.

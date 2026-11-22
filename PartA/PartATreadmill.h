@@ -3,10 +3,10 @@
 
 struct Treadmill {
   enum Phase { READY, BASELINE, WORKOUT, FINAL_CHECK, ALERT, RETAKE, RESUME, DONE, STOPPED };
-  // Fictional inputs and ratios for showing the workflow on the bench.
+  // Prototype workout pacing rules. These percentages are not health limits.
+  static constexpr unsigned paceMultiplier=2;
+  static constexpr unsigned retakePercent=80;
   static constexpr unsigned demoRestingBpm=70;
-  static constexpr unsigned demoAlertMultiplier=2;
-  static constexpr unsigned demoRetakePercent=80;
   Phase phase=READY, resumePhase=READY;
   uint32_t elapsed=0, last=0, phaseAt=0, firstBeat=0, lastBeat=0, sum=0;
   unsigned beats=0, bpm=0, baseline=0, high=0, alertLimit=0;
@@ -32,17 +32,17 @@ struct Treadmill {
     bpm=(sum+beats/2)/beats;resetWindow();missed=false;
     if(phase==BASELINE){
       baseline=bpm;
-      if(demo)alertLimit=baseline*demoAlertMultiplier;
+      alertLimit=baseline*paceMultiplier;
       enter(WORKOUT,now);
       return;
     }
     if(phase==RETAKE){
-      if(bpm<=alertLimit && uint32_t(bpm)*100<=uint32_t(high)*demoRetakePercent)enter(RESUME,now);
+      if(bpm<=alertLimit && uint32_t(bpm)*100<=uint32_t(high)*retakePercent)enter(RESUME,now);
       else enter(ALERT,now);
       return;
     }
     checked=true;
-    if(demo && alertLimit && bpm>alertLimit){
+    if(alertLimit && bpm>alertLimit){
       high=bpm;resumePhase=phase;enter(ALERT,now);
     }else if(phase==FINAL_CHECK)enter(DONE,now);
   }

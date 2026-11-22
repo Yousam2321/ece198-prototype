@@ -9,7 +9,7 @@ static void sample(Treadmill& t,uint32_t start,unsigned bpm){
 }
 int main(){
   Treadmill t;
-  t.start(0,true);
+  t.start(0);
   sample(t,100,70);
   assert(t.phase==Treadmill::WORKOUT && t.baseline==70 && t.alertLimit==140);
   uint32_t now=15100+180000;
@@ -40,7 +40,7 @@ int main(){
   assert(t.phase==Treadmill::DONE && t.bpm==125);
 
   t.start(0);
-  t.tick(60000);assert(t.phase==Treadmill::WORKOUT && !t.baseline);
+  t.tick(60000);assert(t.phase==Treadmill::WORKOUT && !t.baseline && !t.alertLimit);
   t.tick(240000);
   for(uint32_t i=0;i<=15000;i+=1000)t.beat(i<8000?100:120,240000+i);
   assert(t.checked && t.bpm==110);
@@ -48,12 +48,12 @@ int main(){
   assert(t.phase==Treadmill::FINAL_CHECK);
   t.tick(780000);assert(t.phase==Treadmill::DONE && t.missed);
 
-  // Real measurements retain calibration without activating the demo cutoff.
+  // Without a resting reading, even a high walk reading has no pace goal.
   t.start(0);
-  sample(t,100,70);
-  t.tick(195100);
-  sample(t,195200,160);
-  assert(t.phase==Treadmill::WORKOUT && t.baseline==70 && t.alertLimit==0);
+  t.tick(60000);
+  t.tick(240000);
+  sample(t,240100,160);
+  assert(t.phase==Treadmill::WORKOUT && !t.baseline && !t.alertLimit);
   assert(t.checked && t.bpm==160);
 
   // Bench mode supplies the readings on its own using full 15-second windows.
