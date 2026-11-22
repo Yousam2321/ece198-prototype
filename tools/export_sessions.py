@@ -1,4 +1,4 @@
-"""Export Part A or Solution B saved EEPROM summaries to a new CSV file.
+"""Export Part A or Solution B workouts and unwell counts to a new CSV file.
 Finish the current session first: opening the Uno's port can reset the board.
 Close Arduino Serial Monitor before running this script.
 Example: python tools/export_sessions.py --port COM4 --output saved_sessions.csv
@@ -24,6 +24,12 @@ REP_COLUMNS=['session_id','exercise','active_ms','active_seconds','good_reps','a
 SYMPTOM_EXERCISES = ("wall_sit", "plank", "chest_press")
 PART_A_EXERCISES=('squats','lateral_raises')
 PART_A_COLUMNS=['session_id','exercise','active_ms','active_seconds','reps','bpm_avg','bpm_samples','history_id','exported_at_utc']
+CSV_REPORT_FIELDS = ['row_type', 'times_unwell']
+
+
+def unwell_csv_rows(counts):
+    return [dict(row_type='unwell_summary', exercise=exercise, times_unwell=count)
+            for exercise, count in (counts or {}).items() if count]
 
 
 def parse_a_saved(line):
@@ -163,15 +169,22 @@ def read_history(device, timeout=10, clock=time.monotonic, metadata=None):
     raise TimeoutError("No complete history received. Check the port and firmware; no CSV was saved.")
 
 
-def write_csv(path, rows, reps=False, part_a=False):
+def write_csv(path, rows, reps=False, part_a=False, *, symptoms=None):
     exported = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    columns = PART_A_COLUMNS if part_a else REP_COLUMNS if reps else COLUMNS
+    reports = unwell_csv_rows(symptoms)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation protects existing exports. Excel-friendly UTF-8 BOM.
     with path.open("x", newline="", encoding="utf-8-sig") as out:
-        writer = csv.DictWriter(out, fieldnames=PART_A_COLUMNS if part_a else REP_COLUMNS if reps else COLUMNS)
+        writer = csv.DictWriter(out, fieldnames=CSV_REPORT_FIELDS + columns if reports else columns)
         writer.writeheader()
         for row in rows:
-            writer.writerow(dict(row, exported_at_utc=exported))
+            item = dict(row, exported_at_utc=exported)
+            if reports:
+                item['row_type'] = 'workout'
+            writer.writerow(item)
+        for report in reports:
+            writer.writerow(dict(report, exported_at_utc=exported))
 
 
 def main():
@@ -196,12 +209,16 @@ def main():
             time.sleep(2)  # Allow the Uno bootloader/auto-reset to finish.
             device.reset_input_buffer()
             metadata={}
-            rows = read_rep_history(device) if args.reps else read_history(device,metadata=metadata)
+            rows = read_history(device,metadata=metadata)
             if args.part_a and metadata.get('device')!='part_a':raise ValueError('This is not the Part A board. Check the selected COM port.')
-        write_csv(args.output, rows, reps=args.reps,part_a=metadata.get('device')=='part_a')
+            if args.reps:
+                if metadata.get('device')=='part_a':raise ValueError('Chest-press history requires Part B. Check the selected COM port.')
+                rows = read_rep_history(device)
+        counts = metadata.get('symptoms', (0, {}))[1]
+        write_csv(args.output, rows, reps=args.reps,part_a=metadata.get('device')=='part_a',symptoms=counts)
     except (serial.SerialException, OSError, ValueError, TimeoutError) as error:
         parser.exit(1, f"Export failed: {error}\n")
-    print(f"Exported {len(rows)} session(s) to {args.output.resolve()}")
+    print(f"Exported {len(rows)} session(s) and {sum(counts.values())} unwell report(s) to {args.output.resolve()}")
     print("The board's saved history was not erased. Export time is not session time.")
 
 

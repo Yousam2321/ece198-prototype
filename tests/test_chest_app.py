@@ -48,7 +48,8 @@ class ChestAppTests(unittest.TestCase):
             chest=rep();self.assertEqual(store.add('P',[chest]),1) # Same board ID/history, different exercise.
             self.assertEqual(store.add('P',[e.normalize(chest)]),0)
             store.save_criteria('P',TARGETS,90,75);self.assertEqual(store.criteria('P')['rep_minimum'],75)
-            path=Path(d)/'results.csv';export_assessment_csv(path,'P',store.load('P'),TARGETS,90,75)
+            path=Path(d)/'results.csv';export_assessment_csv(path,'P',store.load('P'),TARGETS,90,75,
+                                                            symptoms={'chest_press':1})
             imported=e.load_csv(path);self.assertEqual(len(imported),2)
             self.assertEqual(store.add('P',imported),0)
             self.assertEqual(preview_values(chest)[3],'9 / 12 reps')

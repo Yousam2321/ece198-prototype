@@ -27,9 +27,10 @@ Existing profiles, history and hold criteria remain in the same local database:
 6. View progression shows the selected exercise's percentage (B) or rep count (A). Clean report (PDF)
    includes separate exercise sections, stats, goals, reasons, time/rep graphs,
    and comparisons with previous/first sessions. Changed chest travel is flagged.
-7. Export evaluated CSV includes raw data, derived scores, criteria and feedback.
-   It can be re-imported without duplicating records. The PowerShell original CSV
-   remains a raw-results export. Choose new names; reports never overwrite files.
+7. Export evaluated CSV includes raw data, scores, feedback and the participant's
+   unwell counts by exercise. The PowerShell export includes the connected board's
+   raw results and unwell counts. CSV re-import restores workout rows. To assign
+   new symptom reports to a participant, use Read COM port.
 8. Visible rows selects 7 or 10. Scroll the window on smaller screens.
 9. Manage participants searches profiles and deletes a complete local profile,
    criteria and attempts only after confirmation. Exported files and board saves

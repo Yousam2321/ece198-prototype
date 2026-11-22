@@ -1,4 +1,5 @@
 from pathlib import Path
+import csv
 import sys
 import tempfile
 import unittest
@@ -6,8 +7,9 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "desktop"))
 from test_export_sessions import Port
 from importing import read_all_history
-from evaluation import ResultStore
+from evaluation import ResultStore, load_csv
 from clean_report import build_report
+from report_data import export_assessment_csv
 
 
 class SymptomImportTest(unittest.TestCase):
@@ -35,6 +37,13 @@ class SymptomImportTest(unittest.TestCase):
             report = Path(temp) / "combined.pdf"
             build_report(report, "Combined participant", [], {}, 90, symptoms=counts)
             self.assertTrue(report.read_bytes().startswith(b"%PDF"))
+            csv_path = Path(temp) / "combined.csv"
+            export_assessment_csv(csv_path, "Combined participant", [], {}, 90, symptoms=counts)
+            with csv_path.open(encoding="utf-8-sig", newline="") as saved:
+                summary = list(csv.DictReader(saved))
+            self.assertTrue(all(row["row_type"] == "unwell_summary" for row in summary))
+            self.assertEqual({row["exercise"]: int(row["times_unwell"]) for row in summary}, counts)
+            self.assertEqual(load_csv(csv_path), [])
             store.close()
 
     def test_symptoms_only_import_and_pdf(self):

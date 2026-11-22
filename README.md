@@ -54,6 +54,8 @@ python tools/export_sessions.py --port COM10 --output ".\saved_sessions\saved_se
 
 Part A is detected automatically; `--part-a` can require it explicitly. On Part B the command above exports holds; add `--reps` for chest-press history. The app's Read COM port reads both B archives in one connection. The exporter creates the chosen parent folder if needed, never overwrites an existing file, and does not erase the board. Export time is not session time.
 
+CSV exports include a `times_unwell` summary row for each exercise with saved reports. The command exports counts on the connected board. The app's evaluated CSV exports the active participant's counts from both boards. Use **Read COM port** to assign new reports to a participant.
+
 At 115200 baud with Newline in Serial Monitor:
 
 | Board | Commands |
@@ -98,7 +100,7 @@ The exercise listed was in progress when symptoms were reported.
 want to retain them. Counts already saved to a participant profile remain on
 the computer. Repeated imports from the same station on the same computer skip
 reports already imported. If the station does not expose a USB serial number,
-use the same COM port each time. Regular workout CSVs contain attempt data.
+use the same COM port each time.
 
 ## Team updates and checks
 

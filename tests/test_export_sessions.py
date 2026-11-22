@@ -4,6 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 import csv
+import sys
+from types import SimpleNamespace
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("export_sessions", Path(__file__).resolve().parents[1]/"tools/export_sessions.py")
 export = importlib.util.module_from_spec(spec)
@@ -19,6 +22,9 @@ class Port:
     def flush(self): pass
     def readline(self): return self.lines.pop(0) if self.lines else b""
     def clock(self): self.now+=0.05;return self.now
+    def reset_input_buffer(self): pass
+    def __enter__(self): return self
+    def __exit__(self,*args): pass
 
 class ExportTests(unittest.TestCase):
     def read(self, lines):
@@ -51,6 +57,28 @@ class ExportTests(unittest.TestCase):
     def test_unsupported_firmware(self):
         with self.assertRaises(ValueError): self.read([b'EVENT,station,1,wall_sit,IDLE,command_not_available\n'])
     def test_duplicate_id(self): self.assertEqual(len(self.read([HEADER,ROW,ROW,DATA])),1)
+
+    def test_command_exports_reports_even_without_saved_workouts(self):
+        part_a_header=b'# ASAVED,id,exercise,active_ms,reps,bpm_avg,bpm_samples,history_id\n'
+        for options,stream,expected in (
+            (['--part-a'],[part_a_header,b'A_UNWELL,1,2,0\n',b'# No saved A sessions\n'],('squats','2')),
+            ([],[HEADER,b'UNWELL,1,0,1,0\n',ROW,DATA],('plank','1')),
+            (['--reps'],[HEADER,b'UNWELL,1,0,0,3\n',DATA,RepExportTests.HEADER,RepExportTests.ROW,
+                         b'# END_REP_HISTORY\n'],('chest_press','3')),
+        ):
+            with self.subTest(options=options),tempfile.TemporaryDirectory() as directory:
+                path=Path(directory)/'results.csv'
+                fake=SimpleNamespace(Serial=lambda *a,**kw:Port(stream),SerialException=OSError)
+                with patch.dict(sys.modules,{'serial':fake}),patch.object(export.time,'sleep'),patch.object(
+                    sys,'argv',['export_sessions.py','--port','COM10','--output',str(path),*options]
+                ):
+                    export.main()
+                with path.open(encoding='utf-8-sig',newline='') as stream_out:
+                    saved=list(csv.DictReader(stream_out))
+                self.assertEqual(len(saved),1 if '--part-a' in options else 2)
+                self.assertEqual(saved[-1]['row_type'],'unwell_summary')
+                self.assertEqual((saved[-1]['exercise'],saved[-1]['times_unwell']),expected)
+                self.assertEqual(saved[-1]['session_id'],'')
 
 class RepExportTests(unittest.TestCase):
     HEADER=b'# REPSAVED,id,exercise,active_ms,good_reps,attempts,start_cm,pressed_cm,last_travel_cm,history_id\n'

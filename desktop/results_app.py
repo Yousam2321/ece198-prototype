@@ -460,14 +460,16 @@ class ResultsApp:
         canvas.bind("<Configure>",draw);dialog.after(100,draw)
 
     def export_report(self):
-        if not self.confirmed:messagebox.showinfo("Confirm criteria","Confirm criteria before exporting an assessment.",parent=self.root);return
-        if not self.rows:return
+        participant=self.person.get().strip()
+        symptoms=self.store.symptom_counts(participant)
+        if self.rows and not self.confirmed:messagebox.showinfo("Confirm criteria","Confirm criteria before exporting an assessment.",parent=self.root);return
+        if not self.rows and not symptoms:return
         path=filedialog.asksaveasfilename(title="Save assessment report",defaultextension=".csv",initialfile="exercise_results.csv",filetypes=[("CSV","*.csv")])
         if not path:return
         if Path(path).exists():messagebox.showerror("File exists","Choose a new filename; existing reports are preserved.",parent=self.root);return
-        targets,minimum,rep_minimum=self.criteria()
+        targets,minimum,rep_minimum=self.criteria() if self.rows else ({},90,90)
         try:
-            export_assessment_csv(path,self.person.get().strip(),self.rows,targets,minimum,rep_minimum)
+            export_assessment_csv(path,participant,self.rows,targets,minimum,rep_minimum,symptoms=symptoms)
             self.status.set(f"Evaluated CSV saved: {path}")
         except (OSError,ValueError) as error:messagebox.showerror("Save failed",str(error),parent=self.root)
 

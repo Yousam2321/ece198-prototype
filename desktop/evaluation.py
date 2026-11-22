@@ -99,7 +99,7 @@ def load_csv(path):
         headers=set(reader.fieldnames or [])
         if 'active_seconds' in headers and 'active_ms' not in headers:
             raise ValueError('This is an older evaluated report. Open the original Arduino saved_sessions CSV instead. New evaluated exports can be re-imported.')
-        rows=list(reader)
+        rows=[row for row in reader if row.get('row_type')!='unwell_summary']
     try:return [normalize(row) for row in rows]
     except KeyError as error:
         raise ValueError(f'Missing result column: {error.args[0]}. Open the original saved-session CSV.') from None
