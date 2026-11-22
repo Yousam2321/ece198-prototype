@@ -237,12 +237,12 @@ class ResultsApp:
         self.unwell_summary.set(f"Times unwell: {sum(counts.values())}" + (f" ({detail})" if detail else ""))
 
     def preview_import(self,rows,source,symptoms=None):
-        pending=self.store.pending_symptoms(symptoms)
         saved_reports={exercise:count for exercise,count in (symptoms or {}).get("counts",{}).items() if count}
         if not rows and not saved_reports:
             messagebox.showinfo("No saved results","This source has no saved attempts or symptom reports.",parent=self.root);return
         if not self.person.get().strip():messagebox.showerror("Participant","Enter a participant label first.",parent=self.root);return
         participant=self.person.get().strip()
+        pending=self.store.pending_symptoms(participant,symptoms)
         dialog=tk.Toplevel(self.root);dialog.title("Choose results to keep");dialog.geometry("850x440");dialog.transient(self.root);dialog.grab_set()
         ttk.Label(dialog,text=f"Keep only {participant}'s results selected. Ctrl-click to select or deselect sessions.",wraplength=800).pack(anchor="w",padx=14,pady=14)
         include_symptoms=tk.BooleanVar(dialog,value=bool(saved_reports))
@@ -251,8 +251,11 @@ class ResultsApp:
             ttk.Label(dialog,text=f"Unwell reports saved on board: {sum(saved_reports.values())} ({detail})",
                 wraplength=800).pack(anchor="w",padx=14,pady=(0,4))
             ttk.Checkbutton(dialog,variable=include_symptoms,
-                text=f"Include unwell reports for {participant} ({sum(pending.values())} new)"
-                ).pack(anchor="w",padx=14,pady=(0,8))
+                text=f"Keep these unwell reports for {participant}"
+                ).pack(anchor="w",padx=14,pady=(0,4))
+            already_saved=sum(saved_reports.values())-sum(pending.values())
+            ttk.Label(dialog,text=f"Already in this profile: {already_saved}. New to this profile: {sum(pending.values())}.",
+                wraplength=800).pack(anchor="w",padx=14,pady=(0,8))
         preview=ttk.Frame(dialog);preview.pack(fill="both",expand=True,padx=14)
         tree=ttk.Treeview(preview,columns=("id","exercise","active","hold","tail","band"),show="headings",selectmode="extended",height=7)
         for key,label in zip(tree["columns"],("Board ID","Exercise","Active (s)","Hold / good reps","Ending / short reps","Zone / travel")):
@@ -672,7 +675,9 @@ def smoke_test():
             snapshot={'source':'port:COM10','generation':1,'counts':{'wall_sit':saved_count}}
             preview=app.preview_import([],'COM10',snapshot);root.update()
             check=next(w for w in preview.winfo_children() if isinstance(w,ttk.Checkbutton))
-            assert check.instate(['selected']) and f'({new_count} new)' in check.cget('text')
+            assert check.instate(['selected'])
+            assert any(isinstance(w,ttk.Label) and f'New to this profile: {new_count}.' in w.cget('text')
+                       for w in preview.winfo_children())
             assert any(isinstance(w,ttk.Label) and f'Unwell reports saved on board: {saved_count}' in w.cget('text')
                        for w in preview.winfo_children())
             keep=next(w for group in preview.winfo_children() for w in group.winfo_children()
@@ -680,6 +685,14 @@ def smoke_test():
             keep.invoke();root.update()
             assert not preview.winfo_exists() and not app.rows
             assert app.unwell_summary.get()==f'Times unwell: {saved_count} (Wall sit {saved_count})'
+        app.person.set('Second import profile');root.update()
+        preview=app.preview_import([], 'COM10', snapshot);root.update()
+        assert any(isinstance(w,ttk.Label) and 'New to this profile: 2.' in w.cget('text')
+                   for w in preview.winfo_children())
+        keep=next(w for group in preview.winfo_children() for w in group.winfo_children()
+                  if isinstance(w,ttk.Button) and w.cget('text')=='Keep selected reports')
+        keep.invoke();root.update()
+        assert app.unwell_summary.get()=='Times unwell: 2 (Wall sit 2)'
         app.close()
 
 

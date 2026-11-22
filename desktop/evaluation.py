@@ -188,10 +188,31 @@ class ResultStore:
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (participant TEXT PRIMARY KEY, payload TEXT)")
         self.db.execute("""CREATE TABLE IF NOT EXISTS symptom_reports
             (participant TEXT, exercise TEXT, count INTEGER, PRIMARY KEY(participant,exercise))""")
-        self.db.execute("""CREATE TABLE IF NOT EXISTS symptom_imports
-            (source TEXT, generation INTEGER, exercise TEXT, count INTEGER,
-             PRIMARY KEY(source,generation,exercise))""")
+        self._initialize_symptom_imports()
         self.db.commit()
+    def _initialize_symptom_imports(self):
+        # Upgrade the older computer-wide ledger once without changing existing totals.
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            tables={name for (name,) in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'participant_symptom_imports' in tables:
+                return
+            self.db.execute("""CREATE TABLE participant_symptom_imports
+                (participant TEXT, source TEXT, generation INTEGER, exercise TEXT, count INTEGER,
+                 PRIMARY KEY(participant,source,generation,exercise))""")
+            if 'symptom_imports' in tables:
+                # The old ledger lacks participant IDs. Use the already credited
+                # counts first against newer archives of the same exercise.
+                self.db.execute("""WITH legacy AS (
+                    SELECT source,generation,exercise,count,COALESCE(SUM(count) OVER (
+                        PARTITION BY exercise ORDER BY generation DESC,rowid DESC
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS newer_count
+                    FROM symptom_imports
+                )
+                INSERT INTO participant_symptom_imports
+                SELECT r.participant,l.source,l.generation,l.exercise,MIN(l.count,r.count-l.newer_count)
+                FROM legacy l JOIN symptom_reports r ON r.exercise=l.exercise
+                WHERE r.count>l.newer_count AND l.count>0""")
     def participants(self, limit=100):
         return [r["participant"] for r in self.participant_summaries(limit=limit)]
     def participant_summaries(self, query="", limit=100):
@@ -216,6 +237,7 @@ class ResultStore:
             count=self.db.execute("DELETE FROM sessions WHERE participant=?",(participant,)).rowcount
             self.db.execute("DELETE FROM settings WHERE participant=?",(participant,))
             self.db.execute("DELETE FROM symptom_reports WHERE participant=?",(participant,))
+            self.db.execute("DELETE FROM participant_symptom_imports WHERE participant=?",(participant,))
         return count
     def delete_row(self, participant, row):
         # Use the exact persisted key, not the displayed row number. Board IDs
@@ -229,31 +251,32 @@ class ResultStore:
         return count
     def symptom_counts(self, participant):
         return dict(self.db.execute("SELECT exercise,count FROM symptom_reports WHERE participant=? ORDER BY exercise", (participant,)))
-    def pending_symptoms(self, snapshot):
+    def pending_symptoms(self, participant, snapshot):
         if not snapshot:
             return {}
         previous = dict(self.db.execute(
-            "SELECT exercise,count FROM symptom_imports WHERE source=? AND generation=?",
-            (snapshot["source"],snapshot["generation"])))
+            "SELECT exercise,count FROM participant_symptom_imports WHERE participant=? AND source=? AND generation=?",
+            (participant.strip(),snapshot["source"],snapshot["generation"])))
         return {exercise:total-previous.get(exercise,0) for exercise,total in snapshot["counts"].items()
                 if total>previous.get(exercise,0)}
     def add(self, participant, rows, symptoms=None):
-        if not participant.strip(): raise ValueError("Enter a participant label.")
+        participant=participant.strip()
+        if not participant: raise ValueError("Enter a participant label.")
         count = 0
         with self.db:
             if symptoms:
                 self.db.execute("BEGIN IMMEDIATE")
             for row in rows:
                 cur = self.db.execute("INSERT OR IGNORE INTO sessions VALUES (?,?,?,?)",
-                                      (participant.strip(), record_key(row), datetime.now(timezone.utc).isoformat(), json.dumps(row)))
+                                      (participant, record_key(row), datetime.now(timezone.utc).isoformat(), json.dumps(row)))
                 count += cur.rowcount
-            for exercise,new in self.pending_symptoms(symptoms).items():
-                self.db.execute("""INSERT INTO symptom_imports VALUES (?,?,?,?)
-                    ON CONFLICT(source,generation,exercise) DO UPDATE SET count=excluded.count""",
-                    (symptoms["source"],symptoms["generation"],exercise,symptoms["counts"][exercise]))
+            for exercise,new in self.pending_symptoms(participant,symptoms).items():
+                self.db.execute("""INSERT INTO participant_symptom_imports VALUES (?,?,?,?,?)
+                    ON CONFLICT(participant,source,generation,exercise) DO UPDATE SET count=excluded.count""",
+                    (participant,symptoms["source"],symptoms["generation"],exercise,symptoms["counts"][exercise]))
                 self.db.execute("""INSERT INTO symptom_reports VALUES (?,?,?)
                     ON CONFLICT(participant,exercise) DO UPDATE SET count=count+excluded.count""",
-                    (participant.strip(),exercise,new))
+                    (participant,exercise,new))
         return count
     def load(self, participant):
         rows = self.db.execute("SELECT key,imported,payload FROM sessions WHERE participant=? ORDER BY rowid", (participant,)).fetchall()

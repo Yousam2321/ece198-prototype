@@ -91,7 +91,10 @@ clears the board's saved sessions and symptom counts.
 
 In the Windows app, open the participant and use **Read COM port** for each
 board before the next participant uses it. Each preview shows the saved reports
-and how many are new. Keep the report box selected to assign the new reports.
+and how many are new to the selected participant. Keep the report box selected
+to add reports to that profile. Like workout imports, repeating the import into
+the same profile does not duplicate counts. Only choose a profile for reports
+that belong to that participant.
 The profile and Clean report PDF show one **Times
 unwell** total and a count for each exercise reported across both boards.
 The exercise listed was in progress when symptoms were reported.
@@ -99,7 +102,7 @@ The exercise listed was in progress when symptoms were reported.
 **Erase history** resets the connected board's counts to zero. Import first if you
 want to retain them. Counts already saved to a participant profile remain on
 the computer. Repeated imports from the same station on the same computer skip
-reports already imported. If the station does not expose a USB serial number,
+reports already imported into that profile. If the station does not expose a USB serial number,
 use the same COM port each time.
 
 ## Team updates and checks

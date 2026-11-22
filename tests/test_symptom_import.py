@@ -1,5 +1,6 @@
 from pathlib import Path
 import csv
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -55,24 +56,55 @@ class SymptomImportTest(unittest.TestCase):
         self.assertEqual(rows, [])
         with tempfile.TemporaryDirectory() as temp:
             store = ResultStore(Path(temp) / "results.sqlite")
-            self.assertEqual(store.pending_symptoms(snapshot), {"wall_sit": 1, "chest_press": 2})
+            self.assertEqual(store.pending_symptoms("Participant 1", snapshot), {"wall_sit": 1, "chest_press": 2})
             store.add("Participant 1", rows, snapshot)
             store.add("Participant 1", rows, snapshot)
             store.add("Participant 2", rows, snapshot)
             self.assertEqual(store.symptom_counts("Participant 1"), {"wall_sit": 1, "chest_press": 2})
-            self.assertEqual(store.symptom_counts("Participant 2"), {})
+            self.assertEqual(store.symptom_counts("Participant 2"), {"wall_sit": 1, "chest_press": 2})
             snapshot["counts"]["plank"] = 1
             store.add("Participant 2", rows, snapshot)
-            self.assertEqual(store.symptom_counts("Participant 2"), {"plank": 1})
+            self.assertEqual(store.symptom_counts("Participant 2"), {"plank": 1, "wall_sit": 1, "chest_press": 2})
             snapshot["generation"] = 2
             snapshot["counts"] = {"wall_sit": 0, "plank": 0, "chest_press": 0}
-            self.assertEqual(store.pending_symptoms(snapshot), {})
+            self.assertEqual(store.pending_symptoms("Participant 2", snapshot), {})
             snapshot["counts"]["chest_press"] = 1
             store.add("Participant 2", rows, snapshot)
-            self.assertEqual(store.symptom_counts("Participant 2"), {"plank": 1, "chest_press": 1})
+            self.assertEqual(store.symptom_counts("Participant 2"), {"plank": 1, "wall_sit": 1, "chest_press": 3})
             self.assertEqual(store.participant_count(), 2)
             report = Path(temp) / "report.pdf"
             build_report(report, "Participant 2", [], {}, 90, symptoms=store.symptom_counts("Participant 2"))
             self.assertTrue(report.read_bytes().startswith(b"%PDF"))
             self.assertEqual(store.load("Participant 2"), [])
+            store.close()
+
+    def test_existing_reports_and_repeat_imports_after_upgrade(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "legacy.sqlite"
+            with sqlite3.connect(path) as db:
+                db.executescript("""
+                    CREATE TABLE symptom_reports (participant TEXT, exercise TEXT, count INTEGER,
+                        PRIMARY KEY(participant,exercise));
+                    CREATE TABLE symptom_imports (source TEXT, generation INTEGER, exercise TEXT, count INTEGER,
+                        PRIMARY KEY(source,generation,exercise));
+                    INSERT INTO symptom_reports VALUES ('First','squats',1),('First','lateral_raises',1);
+                    INSERT INTO symptom_imports VALUES ('part_a:port:COM6',1,'squats',1),
+                                                       ('part_a:port:COM6',1,'lateral_raises',1);
+                """)
+            snapshot = dict(source="part_a:port:COM6", generation=1, counts={"squats":1,"lateral_raises":1})
+            store = ResultStore(path)
+            self.assertEqual(store.pending_symptoms("First", snapshot), {})
+            self.assertEqual(store.pending_symptoms("Second", snapshot), snapshot["counts"])
+            store.add("Second", [], snapshot)
+            store.close()
+            store = ResultStore(path)
+            for participant in ("First", "Second"):
+                store.add(participant, [], snapshot)
+                self.assertEqual(store.symptom_counts(participant), {"squats":1,"lateral_raises":1})
+            snapshot["counts"]["squats"] = 2
+            store.add("Second", [], snapshot)
+            self.assertEqual(store.symptom_counts("Second"), {"squats":2,"lateral_raises":1})
+            self.assertEqual(store.symptom_counts("First"), {"squats":1,"lateral_raises":1})
+            store.delete_participant("Second")
+            self.assertEqual(store.pending_symptoms("Second", snapshot), snapshot["counts"])
             store.close()
