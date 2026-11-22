@@ -186,6 +186,11 @@ class ResultStore:
         self.db = sqlite3.connect(self.path)
         self.db.execute("CREATE TABLE IF NOT EXISTS sessions (participant TEXT, key TEXT, imported TEXT, payload TEXT, PRIMARY KEY(participant,key))")
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (participant TEXT PRIMARY KEY, payload TEXT)")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS symptom_reports
+            (participant TEXT, exercise TEXT, count INTEGER, PRIMARY KEY(participant,exercise))""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS symptom_imports
+            (source TEXT, generation INTEGER, exercise TEXT, count INTEGER,
+             PRIMARY KEY(source,generation,exercise))""")
         self.db.commit()
     def participants(self, limit=100):
         return [r["participant"] for r in self.participant_summaries(limit=limit)]
@@ -194,6 +199,7 @@ class ResultStore:
         pattern="%"+query.strip().replace("\\","\\\\").replace("%","\\%").replace("_","\\_")+"%"
         rows=self.db.execute("""WITH people AS (
             SELECT participant FROM sessions UNION SELECT participant FROM settings
+            UNION SELECT participant FROM symptom_reports
         ), totals AS (SELECT participant,COUNT(*) AS attempts FROM sessions GROUP BY participant)
         SELECT p.participant,COALESCE(t.attempts,0) FROM people p
         LEFT JOIN totals t ON p.participant=t.participant
@@ -201,12 +207,15 @@ class ResultStore:
         ORDER BY p.participant COLLATE NOCASE LIMIT ?""",(pattern,max(1,min(int(limit),1000)))).fetchall()
         return [dict(participant=name,attempts=count) for name,count in rows]
     def participant_count(self):
-        return self.db.execute("SELECT COUNT(*) FROM (SELECT participant FROM sessions UNION SELECT participant FROM settings)").fetchone()[0]
+        return self.db.execute("""SELECT COUNT(*) FROM (
+            SELECT participant FROM sessions UNION SELECT participant FROM settings
+            UNION SELECT participant FROM symptom_reports)""").fetchone()[0]
     def delete_participant(self, participant):
         if not participant.strip(): raise ValueError("Select a participant first.")
         with self.db:
             count=self.db.execute("DELETE FROM sessions WHERE participant=?",(participant,)).rowcount
             self.db.execute("DELETE FROM settings WHERE participant=?",(participant,))
+            self.db.execute("DELETE FROM symptom_reports WHERE participant=?",(participant,))
         return count
     def delete_row(self, participant, row):
         # Use the exact persisted key, not the displayed row number. Board IDs
@@ -218,14 +227,33 @@ class ResultStore:
                 # A profile with no criteria must survive deletion of its last row.
                 self.db.execute('INSERT OR IGNORE INTO settings VALUES (?,?)',(participant,'{}'))
         return count
-    def add(self, participant, rows):
+    def symptom_counts(self, participant):
+        return dict(self.db.execute("SELECT exercise,count FROM symptom_reports WHERE participant=?", (participant,)))
+    def pending_symptoms(self, snapshot):
+        if not snapshot:
+            return {}
+        previous = dict(self.db.execute(
+            "SELECT exercise,count FROM symptom_imports WHERE source=? AND generation=?",
+            (snapshot["source"],snapshot["generation"])))
+        return {exercise:total-previous.get(exercise,0) for exercise,total in snapshot["counts"].items()
+                if total>previous.get(exercise,0)}
+    def add(self, participant, rows, symptoms=None):
         if not participant.strip(): raise ValueError("Enter a participant label.")
         count = 0
         with self.db:
+            if symptoms:
+                self.db.execute("BEGIN IMMEDIATE")
             for row in rows:
                 cur = self.db.execute("INSERT OR IGNORE INTO sessions VALUES (?,?,?,?)",
                                       (participant.strip(), record_key(row), datetime.now(timezone.utc).isoformat(), json.dumps(row)))
                 count += cur.rowcount
+            for exercise,new in self.pending_symptoms(symptoms).items():
+                self.db.execute("""INSERT INTO symptom_imports VALUES (?,?,?,?)
+                    ON CONFLICT(source,generation,exercise) DO UPDATE SET count=excluded.count""",
+                    (symptoms["source"],symptoms["generation"],exercise,symptoms["counts"][exercise]))
+                self.db.execute("""INSERT INTO symptom_reports VALUES (?,?,?)
+                    ON CONFLICT(participant,exercise) DO UPDATE SET count=count+excluded.count""",
+                    (participant.strip(),exercise,new))
         return count
     def load(self, participant):
         rows = self.db.execute("SELECT key,imported,payload FROM sessions WHERE participant=? ORDER BY rowid", (participant,)).fetchall()

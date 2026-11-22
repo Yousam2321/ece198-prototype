@@ -15,7 +15,8 @@
 #include "HoldTiming.h"
 #include "exercises/ChestPress.h"
 #include "RepSessions.h"
-#define STATION_VERSION "2.7"
+#include "SymptomCounts.h"
+#define STATION_VERSION "2.8"
 #if ENABLE_OLED
 #include <Wire.h>
 #include <U8x8lib.h>
@@ -40,6 +41,9 @@ uint8_t profile=0; // 0=wall sit, 1=plank, 2=chest press
 bool calibrated=false, calibrating=false, distanceValid=false, inside=false;
 bool finalResultShown=false, lastSaveSucceeded=false;
 bool cancelPrompt=false,discardResult=false;
+bool symptomPrompt=false;
+uint8_t symptomResult=0; // 1 = report saved, 2 = write failed.
+SymptomCounts<EEPROMClass> symptomCounts(EEPROM);
 bool erasePrompt=false, eraseWaitRelease=false, eraseChordActive=false, eraseCanOpen=false;
 uint8_t eraseResult=0; // 0=none, 1=cleared, 2=erase failed
 uint32_t eraseChordAt=0;
@@ -80,7 +84,7 @@ void emit(const char* type,const __FlashStringHelper* note) {
   Serial.print(',');Serial.println(note);
 }
 void resetSession() {
-  cancelPrompt=false;discardResult=false;
+  cancelPrompt=false;discardResult=false;symptomPrompt=false;symptomResult=0;
   finalResultShown=false;lastSaveSucceeded=false;eraseResult=0;
   session.reset(millis());rangeTimer.clear();reps.clear();
   historyCount=0;distanceValid=false;inside=false;calibrating=false;
@@ -169,7 +173,7 @@ void measureDistance(uint32_t now) {
   rangeTimer.update(measuredAt,session.state==RUNNING,distanceValid,inside);
 }
 void go() {
-  if(cancelPrompt)return;
+  if(cancelPrompt || symptomPrompt)return;
   if(calibrating){emit("EVENT",F("wait_for_calibration"));return;}
   // A completed session never toggles back to DONE on the next short press.
   if(session.state==DONE)resetSession();
@@ -195,6 +199,10 @@ void showHistory() {
     emit("EVENT",F("pause_before_history"));return;
   }
   Serial.println(F("# SAVED,id,exercise,active_ms,in_band_ms,reference_cm,band_cm,trailing_out_ms,has_hold,history_id"));
+  uint32_t symptoms=symptomCounts.snapshot();
+  Serial.print(F("UNWELL,"));Serial.print(archive.historyId());
+  for(uint8_t i=0;i<3;++i){Serial.print(',');Serial.print(symptomCounts.count(symptoms,i));}
+  Serial.println();
   uint32_t latest=archive.latestId();
   if(!latest){Serial.println(F("# No saved sessions"));return;}
   uint32_t first=latest>20?latest-19:1;
@@ -240,12 +248,24 @@ void finishSession() {
   emit("SUMMARY",saved?F("saved_to_eeprom"):F("save_failed"));
   if(saved)printSaved(r);
 }
-// A paused session can be discarded without writing or erasing EEPROM.
+// Discard the cancelled result before asking whether the participant felt unwell.
 // Button events arrive on release; the opening MODE release is consumed here.
 bool handleCancelButtons(uint32_t now,ButtonEvent a,ButtonEvent b){
+  if(symptomPrompt){
+    if(a==SHORT_PRESS && b==NO_PRESS && !modeButton.stable){
+      symptomPrompt=false;
+      symptomResult=archive.ensureHistoryId() && symptomCounts.add(profile)?1:2;
+      emit("EVENT",symptomResult==1?F("unwell_report_saved"):F("unwell_save_failed"));
+    }else if(b==SHORT_PRESS && a==NO_PRESS && !goButton.stable)symptomPrompt=false;
+    return true;
+  }
+  if(symptomResult){
+    if(b==SHORT_PRESS && a==NO_PRESS && !goButton.stable)symptomResult=0;
+    return true;
+  }
   if(cancelPrompt){
     if(a==SHORT_PRESS && b==NO_PRESS && !modeButton.stable){
-      resetSession();discardResult=true;
+      resetSession();discardResult=true;symptomPrompt=true;
       emit("EVENT",F("session_cancelled_not_saved"));
     }else if(b==SHORT_PRESS && a==NO_PRESS && !goButton.stable){
       cancelPrompt=false;emit("EVENT",F("cancel_back_to_paused"));
@@ -264,7 +284,8 @@ bool handleCancelButtons(uint32_t now,ButtonEvent a,ButtonEvent b){
 // Both buttons open a confirmation menu, only when no session is active.
 void eraseHistory() {
   if((session.state!=IDLE && session.state!=DONE) || calibrating)return;
-  bool cleared=archive.clear();
+  bool cleared=symptomCounts.clear();
+  if(cleared)cleared=archive.clear();
   if(cleared)cleared=repArchive.clear();
   if(cleared)resetSession();
   eraseResult=cleared?1:2;finalResultShown=false;
@@ -301,7 +322,9 @@ bool handleEraseButtons(uint32_t now,ButtonEvent a,ButtonEvent b) {
 }
 // Both wall sit and plank use this controller; only reference placement differs.
 void handleCommand(char* line) {
-  if(cancelPrompt){emit("EVENT",F("answer_cancel_with_buttons"));return;}
+  if(cancelPrompt || symptomPrompt){emit("EVENT",F("answer_cancel_with_buttons"));return;}
+  if(symptomResult && strcmp(line,"history") && strcmp(line,"rep_history") &&
+     strcmp(line,"version")){emit("EVENT",F("acknowledge_unwell"));return;}
   if(!strcmp(line,"go"))go();
   else if(!strcmp(line,"cal"))startCalibration();
   else if(!strcmp(line,"history"))showHistory();
@@ -384,6 +407,19 @@ void displayChest(){
 // Text-only U8x8 avoids a large framebuffer on the memory-limited Uno R3.
 void updateDisplay() {
 #if ENABLE_OLED
+  if(symptomPrompt || symptomResult){
+    writeDisplayFlash(0,symptomPrompt?F("FEELING UNWELL?"):F("STOP EXERCISE"));
+    writeDisplayFlash(1,symptomPrompt?F("GO=yes MODE=no"):F("Tell clinician"));
+    writeDisplayFlash(2,symptomPrompt?F("Attempt ended"):symptomResult==1?F("Report saved"):F("Report failed"));
+    char text[17];
+    uint32_t symptoms=symptomCounts.snapshot();
+    snprintf(text,sizeof(text),"Unwell: %u",symptomCounts.count(symptoms,0)
+      +symptomCounts.count(symptoms,1)+symptomCounts.count(symptoms,2));
+    writeDisplayLine(3,text);
+    writeDisplayFlash(4,symptomResult?F("MODE=acknowledge"):F(""));
+    writeDisplayFlash(5,F(""));writeDisplayFlash(6,F(""));
+    writeDisplayFlash(7,F("B" STATION_VERSION));return;
+  }
   if(cancelPrompt || discardResult){
     writeDisplayFlash(0,cancelPrompt?F("CANCEL SESSION?"):F("CANCELLED"));
     writeDisplayFlash(1,cancelPrompt?F("GO=yes MODE=no"):F("NOT SAVED"));
@@ -405,7 +441,8 @@ void updateDisplay() {
     writeDisplayFlash(0,eraseResult==1?F("HISTORY CLEARED"):F("ERASE FAILED"));
     writeDisplayFlash(1,F("GO=next session"));writeDisplayFlash(2,F("MODE=exercise"));
     writeDisplayFlash(3,F("CSV files kept"));
-    writeDisplayFlash(4,F(""));writeDisplayFlash(5,F(""));writeDisplayFlash(6,F(""));
+    writeDisplayFlash(4,eraseResult==1?F("Unwell: 0"):F(""));
+    writeDisplayFlash(5,F(""));writeDisplayFlash(6,F(""));
     writeDisplayFlash(7,F("B" STATION_VERSION));return;
   }
   // Keep the completed result still; live range/status must not redraw it.

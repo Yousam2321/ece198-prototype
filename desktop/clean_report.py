@@ -114,11 +114,12 @@ def _table(c,top,entries,targets,minimum,rep_minimum=90,all_rows=None):
     return top-h
 
 
-def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
+def build_report(path, participant, rows, targets, minimum,rep_minimum=90,*,symptoms=None):
     """Write a new PDF, grouped by exercise and tolerance; refuse overwrite."""
-    validate_criteria(targets,minimum,rep_minimum)
+    if rows:
+        validate_criteria(targets,minimum,rep_minimum)
     if {r["exercise"] for r in rows}-targets.keys():raise ValueError("Set targets for all loaded exercises before exporting.")
-    if not participant.strip() or not rows:raise ValueError('Choose a participant with saved attempts first.')
+    if not participant.strip() or not (rows or symptoms):raise ValueError('Choose a participant with saved results first.')
     groups={}
     for index,row in enumerate(rows):
         # Same tolerance rule as progression(), without mixing incompatible records.
@@ -128,7 +129,7 @@ def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
         groups[group].append((index,row))
     # Summary + graphs have their own page. Tables continue on separate pages,
     # keeping reports readable even with hundreds of attempts.
-    total=sum(1+(len(entries)+7)//8 for entries in groups.values())
+    total=sum(1+(len(entries)+7)//8 for entries in groups.values()) + bool(symptoms)
     path=Path(path)
     with path.open('xb') as output:
         c=canvas.Canvas(output,pagesize=A4)
@@ -191,6 +192,20 @@ def build_report(path, participant, rows, targets, minimum,rep_minimum=90):
                 top=paragraph(c,f'Attempt history | goal {targets[exercise]:g}s and consistency {minimum:g}%.',LEFT,HEIGHT-125,CONTENT)
                 _table(c,top-15,entries[start:start+8],targets,minimum,rep_minimum,rows)
                 c.showPage()
+        if symptoms:
+            page+=1
+            c.setFillColor(INK)
+            c.setFont('Report-Bold',20)
+            c.drawString(LEFT,HEIGHT-60,'Feeling unwell')
+            top=paragraph(c,participant,LEFT,HEIGHT-76,CONTENT)-22
+            top=paragraph(c,f"Times unwell: {sum(symptoms.values())}",LEFT,top,CONTENT)-16
+            top=paragraph(c,"Exercise in progress when the participant reported feeling unwell",LEFT,top,CONTENT)-8
+            for exercise,count in symptoms.items():
+                top=paragraph(c,f"{EXERCISES[exercise]}: {count}",LEFT,top,CONTENT)-6
+            c.setFillColor(MUTED)
+            c.setFont('Report',8)
+            c.drawRightString(WIDTH-LEFT,25,f'{page} / {total}')
+            c.showPage()
         c.save()
     return path
 

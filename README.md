@@ -71,6 +71,26 @@ GO short: start / pause / resume; from DONE, start another calibrated session. G
 
 Hold GO+MODE 3 seconds in IDLE/DONE to open Erase history. Release both, then GO confirms or MODE cancels. This clears both B archives: latest 20 holds and 10 chest sessions. The saved DONE display stays fixed. Keep power connected during any save/erase.
 
+## Part B symptom reports — B2.8
+
+Pause with GO, hold MODE for 2 seconds, then confirm **Cancel session** with GO.
+Answer **Feeling unwell?** with GO for Yes or MODE for No. Yes saves a report
+for the selected exercise and shows the station total. Press MODE to
+acknowledge the message. The cancelled attempt does not count as a completed
+exercise.
+
+In the Windows app, choose the participant and use **Read COM port** before
+the next participant uses the station. In the import preview, check the box to
+assign the new symptom reports to that participant. The profile and Clean
+report PDF show **Times unwell** by exercise. These reports identify the
+exercise in progress when symptoms were reported.
+
+**Erase history** resets the board's three counts to zero. Import first if you
+want to retain them. Counts already saved to a participant profile remain on
+the computer. Repeated imports from the same station on the same computer skip
+reports already imported. If the station does not expose a USB serial number,
+use the same COM port each time. Regular workout CSVs contain attempt data.
+
 ## Team updates and checks
 
 Use [GitHub Desktop](docs/GIT_WORKFLOW.md) to clone once and pull updates instead of downloading ZIPs repeatedly. Pulling source does not update a board: open the matching sketch and click Upload. Do not upload Part A over the Part B board.

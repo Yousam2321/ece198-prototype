@@ -76,6 +76,8 @@ class ResultsApp:
         ttk.Button(top,text="Manage participants",command=self.manage_participants).pack(side="left",padx=8)
         ttk.Button(top,text="Open results CSV",command=self.open_csv).pack(side="right")
         ttk.Button(top,text="Read COM port",command=self.read_arduino).pack(side="right",padx=8)
+        self.unwell_summary=tk.StringVar(value="Times unwell: 0")
+        ttk.Label(outer,textvariable=self.unwell_summary).pack(anchor="w",pady=(8,0))
         criteria=ttk.LabelFrame(outer,text="1. Set and confirm criteria",padding=10);criteria.pack(fill="x",pady=12)
         self.wall=tk.StringVar();self.plank=tk.StringVar();self.minimum=tk.StringVar(value="90")
         self.chest=tk.StringVar();self.rep_minimum=tk.StringVar(value="90")
@@ -188,6 +190,7 @@ class ResultsApp:
         # Switching changes the displayed owner; it never clears stored attempts.
         # Load the new owner's rows before field traces can redraw the table.
         self.rows=self.store.load(name) if name else []
+        self.show_symptom_total(name)
         self.load_profile_criteria(name)
         self.refresh_table()
         self.people.configure(values=self.store.participants())
@@ -228,11 +231,25 @@ class ResultsApp:
         try:self.preview_import(load_csv(path),str(path))
         except (ValueError,TypeError,OSError,KeyError,csv.Error) as error:messagebox.showerror("Could not read results",str(error),parent=self.root)
 
-    def preview_import(self,rows,source):
-        if not rows:messagebox.showinfo("No saved sessions","This source has no saved sessions.",parent=self.root);return
+    def show_symptom_total(self, participant):
+        counts=self.store.symptom_counts(participant)
+        detail=", ".join(f"{EXERCISES[exercise]} {count}" for exercise,count in counts.items())
+        self.unwell_summary.set(f"Times unwell: {sum(counts.values())}" + (f" ({detail})" if detail else ""))
+
+    def preview_import(self,rows,source,symptoms=None):
+        pending=self.store.pending_symptoms(symptoms)
+        if not rows and not pending:
+            messagebox.showinfo("No new results","This source has no saved attempts or new symptom reports.",parent=self.root);return
         if not self.person.get().strip():messagebox.showerror("Participant","Enter a participant label first.",parent=self.root);return
+        participant=self.person.get().strip()
         dialog=tk.Toplevel(self.root);dialog.title("Choose sessions to keep");dialog.geometry("850x440");dialog.transient(self.root);dialog.grab_set()
-        ttk.Label(dialog,text=f"Keep only {self.person.get().strip()}'s sessions selected. Ctrl-click to select/deselect.",wraplength=800).pack(anchor="w",padx=14,pady=14)
+        ttk.Label(dialog,text=f"Keep only {participant}'s sessions selected. Ctrl-click to select/deselect.",wraplength=800).pack(anchor="w",padx=14,pady=14)
+        include_symptoms=tk.BooleanVar(dialog,value=False)
+        if pending:
+            detail=", ".join(f"{EXERCISES[exercise]} {count}" for exercise,count in pending.items())
+            ttk.Checkbutton(dialog,variable=include_symptoms,
+                text=f"Import {sum(pending.values())} new symptom report(s) for {participant} ({detail})"
+                ).pack(anchor="w",padx=14,pady=(0,8))
         preview=ttk.Frame(dialog);preview.pack(fill="both",expand=True,padx=14)
         tree=ttk.Treeview(preview,columns=("id","exercise","active","hold","tail","band"),show="headings",selectmode="extended",height=7)
         for key,label in zip(tree["columns"],("Board ID","Exercise","Active (s)","Hold / good reps","Ending / short reps","Zone / travel")):
@@ -247,13 +264,14 @@ class ResultsApp:
         ttk.Button(buttons,text="Cancel",command=dialog.destroy).pack(side="left")
         def keep():
             selected=[rows[int(i)] for i in tree.selection()]
-            if not selected: return
-            added=self.store.add(self.person.get().strip(),selected)
-            self.rows=self.store.load(self.person.get().strip());self.confirmed=False;self.set_criteria_collapsed(False);self.refresh_table()
+            if not selected and not include_symptoms.get(): return
+            added=self.store.add(participant,selected,symptoms if include_symptoms.get() else None)
+            self.rows=self.store.load(participant);self.confirmed=False;self.set_criteria_collapsed(False);self.refresh_table()
+            self.show_symptom_total(participant)
             self.people.configure(values=self.store.participants())
             self.status.set(f"Added {added} new attempt(s); duplicates skipped. Saved on this computer. Source: {source}")
             dialog.destroy()
-        ttk.Button(buttons,text="Keep selected sessions",command=keep).pack(side="right")
+        ttk.Button(buttons,text="Keep selected sessions" if rows else "Keep selected reports",command=keep).pack(side="right")
         return dialog
 
     def refresh_table(self):
@@ -380,14 +398,17 @@ class ResultsApp:
         return dialog
 
     def export_clean_report(self):
-        if not self.confirmed:
+        participant=self.person.get().strip()
+        symptoms=self.store.symptom_counts(participant)
+        if self.rows and not self.confirmed:
             messagebox.showinfo("Confirm criteria","Review and confirm criteria before creating a report.",parent=self.root);return
-        if not self.rows:
-            messagebox.showinfo("No attempts","Import saved attempts first.",parent=self.root);return
+        if not self.rows and not symptoms:
+            messagebox.showinfo("No results","Import saved attempts or symptom reports first.",parent=self.root);return
         path=filedialog.asksaveasfilename(title="Save readable progress report",defaultextension=".pdf",initialfile="exercise_progress.pdf",filetypes=[("PDF report","*.pdf")])
         if not path:return
         try:
-            build_report(path,self.person.get().strip(),self.rows,*self.criteria())
+            criteria=self.criteria() if self.rows else ({},90,90)
+            build_report(path,participant,self.rows,*criteria,symptoms=symptoms)
             self.status.set(f"PDF report saved: {path}")
             webbrowser.open(Path(path).resolve().as_uri())
         except FileExistsError:messagebox.showerror("File exists","Choose a new filename; existing reports are preserved.",parent=self.root)
@@ -457,13 +478,19 @@ class ResultsApp:
         def read():
             device=port.get().strip()
             if not device:return
+            port_info=next((p for p in ports if p.device.casefold()==device.casefold()),None)
+            identity=(getattr(port_info,"serial_number",None) or "").strip()
+            source_key=f"usb:{port_info.vid}:{port_info.pid}:{identity}" if identity else f"port:{device.upper()}"
             dialog.destroy();self.busy=True;self.status.set("Detecting board and reading saved sessions…")
             def worker():
                 try:
                     import serial
                     with serial.Serial(device,115200,timeout=0.25) as connection:
-                        time.sleep(2);connection.reset_input_buffer();rows,notice=read_all_history(connection)
-                    self.jobs.put(("rows",rows,device+(" - "+notice if notice else "")))
+                        time.sleep(2);connection.reset_input_buffer()
+                        snapshot={}
+                        rows,notice=read_all_history(connection,symptom_snapshot=snapshot)
+                    if snapshot:snapshot["source"]=source_key
+                    self.jobs.put(("rows",(rows,snapshot),device+(" - "+notice if notice else "")))
                 except Exception as error:self.jobs.put(("error",str(error),device))
             threading.Thread(target=worker,daemon=True).start()
         ttk.Button(dialog,text="Read saved results",command=read).pack(anchor="e",padx=16,pady=12)
@@ -474,7 +501,9 @@ class ResultsApp:
             if kind=="error":
                 self.status.set("Could not read the board.")
                 messagebox.showerror("Read failed",str(value)+"\nClose Serial Monitor, check the port and retry.",parent=self.root)
-            else:self.preview_import(value,source)
+            else:
+                rows,snapshot=value
+                self.preview_import(rows,source,snapshot)
         except queue.Empty:pass
         self.root.after(100,self.check_jobs)
 

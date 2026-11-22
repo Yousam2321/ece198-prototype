@@ -21,6 +21,7 @@ REP_COLUMNS=['session_id','exercise','active_ms','active_seconds','good_reps','a
              'required_travel_cm','return_tolerance_cm','last_travel_cm','history_id','exported_at_utc']
 
 
+SYMPTOM_EXERCISES = ("wall_sit", "plank", "chest_press")
 PART_A_EXERCISES=('squats','lateral_raises')
 PART_A_COLUMNS=['session_id','exercise','active_ms','active_seconds','reps','bpm_avg','bpm_samples','history_id','exported_at_utc']
 
@@ -129,7 +130,19 @@ def read_history(device, timeout=10, clock=time.monotonic, metadata=None):
         pending = b""
         if line.startswith(("# SAVED,","# ASAVED,")):
             started = True;rows = {};part_a=line.startswith('# ASAVED,')
-            if metadata is not None:metadata['device']='part_a' if part_a else 'station'
+            if metadata is not None:
+                metadata['device']='part_a' if part_a else 'station'
+                metadata.pop("symptoms", None)
+        elif started and not part_a and line.startswith("UNWELL,") and metadata is not None:
+            try:
+                generation, *counts = map(int, line.split(",")[1:])
+                if generation < 0 or len(counts) != 3 or any(not 0<=n<=1023 for n in counts):
+                    raise ValueError
+                if not generation and any(counts):
+                    raise ValueError
+            except ValueError as error:
+                raise ValueError("Invalid symptom history from HoldStation.") from error
+            metadata["symptoms"] = (generation, dict(zip(SYMPTOM_EXERCISES, counts)))
         elif started and line.startswith('ASAVED,' if part_a else 'SAVED,'):
             row = parse_a_saved(line) if part_a else parse_saved(line)
             previous = rows.get(row["session_id"])
