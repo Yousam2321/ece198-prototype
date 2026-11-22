@@ -11,8 +11,9 @@ Existing profiles, history and hold criteria remain in the same local database:
    first. Read COM port auto-detects A/B, reading both B archives when relevant. Select only
    that participant's records and Keep selected sessions. Duplicate imports skip.
    To import symptom reports, open the same participant for both boards and
-   check the symptom-report box in each preview. The profile and Clean report
-   PDF show the combined Times unwell total and counts by exercise.
+   keep the symptom-report box selected in each preview. A reread shows the
+   board's saved counts and adds any new reports only. The profile and Clean
+   report PDF show the combined Times unwell total and counts by exercise.
 3. Enter targets only for the exercises loaded in this profile. Hold targets use
    seconds; chest targets use whole good-rep counts; Part A squats/lateral raises
    use whole recorded-rep counts. The two percentage fields

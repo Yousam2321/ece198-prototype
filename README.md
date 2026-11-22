@@ -88,8 +88,9 @@ saved count. The cancelled workout is discarded. Confirming **Erase history**
 clears the board's saved sessions and symptom counts.
 
 In the Windows app, open the participant and use **Read COM port** for each
-board before the next participant uses it. In each preview, check the box to
-assign new symptom reports. The profile and Clean report PDF show one **Times
+board before the next participant uses it. Each preview shows the saved reports
+and how many are new. Keep the report box selected to assign the new reports.
+The profile and Clean report PDF show one **Times
 unwell** total and a count for each exercise reported across both boards.
 The exercise listed was in progress when symptoms were reported.
 

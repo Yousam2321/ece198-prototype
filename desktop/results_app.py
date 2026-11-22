@@ -238,17 +238,20 @@ class ResultsApp:
 
     def preview_import(self,rows,source,symptoms=None):
         pending=self.store.pending_symptoms(symptoms)
-        if not rows and not pending:
-            messagebox.showinfo("No new results","This source has no saved attempts or new symptom reports.",parent=self.root);return
+        saved_reports={exercise:count for exercise,count in (symptoms or {}).get("counts",{}).items() if count}
+        if not rows and not saved_reports:
+            messagebox.showinfo("No saved results","This source has no saved attempts or symptom reports.",parent=self.root);return
         if not self.person.get().strip():messagebox.showerror("Participant","Enter a participant label first.",parent=self.root);return
         participant=self.person.get().strip()
-        dialog=tk.Toplevel(self.root);dialog.title("Choose sessions to keep");dialog.geometry("850x440");dialog.transient(self.root);dialog.grab_set()
-        ttk.Label(dialog,text=f"Keep only {participant}'s sessions selected. Ctrl-click to select/deselect.",wraplength=800).pack(anchor="w",padx=14,pady=14)
-        include_symptoms=tk.BooleanVar(dialog,value=False)
-        if pending:
-            detail=", ".join(f"{EXERCISES[exercise]} {count}" for exercise,count in pending.items())
+        dialog=tk.Toplevel(self.root);dialog.title("Choose results to keep");dialog.geometry("850x440");dialog.transient(self.root);dialog.grab_set()
+        ttk.Label(dialog,text=f"Keep only {participant}'s results selected. Ctrl-click to select or deselect sessions.",wraplength=800).pack(anchor="w",padx=14,pady=14)
+        include_symptoms=tk.BooleanVar(dialog,value=bool(saved_reports))
+        if saved_reports:
+            detail=", ".join(f"{EXERCISES[exercise]} {count}" for exercise,count in saved_reports.items())
+            ttk.Label(dialog,text=f"Unwell reports saved on board: {sum(saved_reports.values())} ({detail})",
+                wraplength=800).pack(anchor="w",padx=14,pady=(0,4))
             ttk.Checkbutton(dialog,variable=include_symptoms,
-                text=f"Import {sum(pending.values())} new symptom report(s) for {participant} ({detail})"
+                text=f"Include unwell reports for {participant} ({sum(pending.values())} new)"
                 ).pack(anchor="w",padx=14,pady=(0,8))
         preview=ttk.Frame(dialog);preview.pack(fill="both",expand=True,padx=14)
         tree=ttk.Treeview(preview,columns=("id","exercise","active","hold","tail","band"),show="headings",selectmode="extended",height=7)
@@ -266,12 +269,16 @@ class ResultsApp:
             selected=[rows[int(i)] for i in tree.selection()]
             if not selected and not include_symptoms.get(): return
             added=self.store.add(participant,selected,symptoms if include_symptoms.get() else None)
-            self.rows=self.store.load(participant);self.confirmed=False;self.set_criteria_collapsed(False);self.refresh_table()
+            self.rows=self.store.load(participant)
+            if added:
+                self.confirmed=False;self.set_criteria_collapsed(False)
+            self.refresh_table()
             self.show_symptom_total(participant)
             self.people.configure(values=self.store.participants())
-            self.status.set(f"Added {added} new attempt(s); duplicates skipped. Saved on this computer. Source: {source}")
+            self.status.set(f"Added {added} new attempt(s). {self.unwell_summary.get()}. Duplicates skipped. Source: {source}")
             dialog.destroy()
-        ttk.Button(buttons,text="Keep selected sessions" if rows else "Keep selected reports",command=keep).pack(side="right")
+        label="Keep selected results" if rows and saved_reports else "Keep selected sessions" if rows else "Keep selected reports"
+        ttk.Button(buttons,text=label,command=keep).pack(side="right")
         return dialog
 
     def refresh_table(self):
@@ -656,6 +663,21 @@ def smoke_test():
         assert 'held' in app.stats.get().lower()
         app.show_progress();root.update()
         app.delete_profile('Participant 1');assert not app.rows and not app.store.participants()
+        # Reread the same board with only symptom reports. Keep remains available,
+        # identical reports are skipped, and an increased count is imported once.
+        app.person.set('Repeat import test');root.update()
+        for saved_count,new_count in ((1,1),(1,0),(2,1)):
+            snapshot={'source':'port:COM10','generation':1,'counts':{'wall_sit':saved_count}}
+            preview=app.preview_import([],'COM10',snapshot);root.update()
+            check=next(w for w in preview.winfo_children() if isinstance(w,ttk.Checkbutton))
+            assert check.instate(['selected']) and f'({new_count} new)' in check.cget('text')
+            assert any(isinstance(w,ttk.Label) and f'Unwell reports saved on board: {saved_count}' in w.cget('text')
+                       for w in preview.winfo_children())
+            keep=next(w for group in preview.winfo_children() for w in group.winfo_children()
+                      if isinstance(w,ttk.Button) and w.cget('text')=='Keep selected reports')
+            keep.invoke();root.update()
+            assert not preview.winfo_exists() and not app.rows
+            assert app.unwell_summary.get()==f'Times unwell: {saved_count} (Wall sit {saved_count})'
         app.close()
 
 
