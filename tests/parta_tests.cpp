@@ -66,6 +66,7 @@ int main(int argc,char** argv){
   Serial.connected=false;
   setup();assert(calibrating && sessionArchive.latestId()==0);
   assert(Wire.timeout==5000);
+  assert(pulseSensor.ledMode==2);
   advanceA(1100);assert(!calibrating && session.state==IDLE && Serial.output.empty());
   // Fully standalone use: no monitor, no commands, no serial output.
   beginAttempt();squat();assert(repCount==1);
@@ -138,7 +139,7 @@ int main(int argc,char** argv){
   beginAttempt();go();assert(session.state==PAUSED);go();finish();
   assert(session.state==DONE && sessionArchive.latestId()==2);
   Serial.space=64;Serial.output.clear();commandA("version\n");
-  assert(Serial.output=="# DEVICE,part_a,A2.3\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.4\n");
   Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
   assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);
@@ -188,12 +189,21 @@ int main(int argc,char** argv){
   resetAttempt(fakeNow);currentExercise=0;
   next();next();advanceA(120);
   assert(lcd.rows[0].find("TREADMILL READY")==0);
-  go();
   auto pulseFor=[&](unsigned interval,unsigned count){
     for(unsigned i=0;i<count;++i){
       advanceA(interval-10);fakeBeat=true;advanceA(10);
     }
   };
+  assert(lcd.rows[1].find("Finding pulse...")==0);
+  pulseFor(750,4);advanceA(120);
+  assert(lcd.rows[1].find("Live 80 BPM")==0 && treadmill.phase==Treadmill::READY);
+  Serial.output.clear();commandA("pulse\n");
+  assert(Serial.output.find("PULSE,ready=1,ir=60000,contact=1,bpm=80")!=std::string::npos);
+  fakeIr=1000;Serial.output.clear();advanceA(400);
+  assert(Serial.output.find("PULSE,ready=1,ir=1000,contact=0,bpm=--")!=std::string::npos);
+  Serial.output.clear();commandA("pulse off\n");advanceA(500);
+  assert(Serial.output=="# Pulse readings off\n");
+  fakeIr=60000;go();
   pulseFor(857,20);advanceA(120);
   assert(treadmill.baseline==70 && treadmill.alertLimit==140 && !treadmill.demo);
   assert(lcd.rows[1].find("Rest 70 BPM")==0);
