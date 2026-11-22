@@ -2,7 +2,7 @@ ECE198 Exercise Results - Windows
 
 Close the old app, extract the download and double-click dist/ECE198_Results.exe.
 No Python installation is needed for the executable. For symptom reports, use
-Part A A2.1 and HoldStation B2.8. Older firmware can still provide saved workouts.
+Part A A2.1 or later and HoldStation B2.8. Older firmware can still provide saved workouts.
 Existing profiles, history and hold criteria remain in the same local database:
 %LOCALAPPDATA%\ECE198_Results\results.sqlite3
 

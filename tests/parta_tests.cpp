@@ -49,7 +49,7 @@ void testArchive(){
     assert(!partial.readId(26,r) && partial.readId(25,r));
   }
   memory.bytes[((25-1)%20)*23+11]^=1;assert(!log.readId(25,r));
-  for(int cut=0;cut<477;++cut){
+  for(int cut=0;cut<500;++cut){
     EEPROMClass interrupted=memory;interrupted.writes=0;interrupted.failAfter=cut;
     PartAArchive<EEPROMClass> erasing(interrupted);try{erasing.clear();}catch(int){}
     if(erasing.historyId()==2)assert(!erasing.readId(24,r) && erasing.latestId()==0);
@@ -70,8 +70,17 @@ void testArchive(){
   }
   PartAArchive<EEPROMClass> symptomReboot(symptomsMemory);
   assert(symptomReboot.symptoms().total()==2);
+  for(int cut=0;cut<31;++cut){
+    EEPROMClass partialMemory=symptomsMemory;partialMemory.writes=0;partialMemory.failAfter=cut;
+    PartAArchive<EEPROMClass> partial(partialMemory);
+    try{partial.clear();}catch(int){}
+    assert(partial.symptoms().total()==(partial.historyId()==1?2:0));
+  }
   assert(symptomReboot.clear() && symptomReboot.symptoms().total()==0);
-  assert(symptomReboot.addSymptom(1) && symptomReboot.symptoms().lateralRaises==1);
+  for(int i=916;i<=937;++i)assert(symptomsMemory.read(i)==0);
+  PartAArchive<EEPROMClass> afterErase(symptomsMemory);
+  assert(afterErase.historyId()==2 && afterErase.symptoms().total()==0);
+  assert(afterErase.addSymptom(1) && afterErase.symptoms().lateralRaises==1);
 }
 int main(int argc,char** argv){
   for(int& value:fakePins)value=HIGH;
@@ -130,6 +139,8 @@ int main(int argc,char** argv){
   assert(menu==SYMPTOM_PROMPT && sessionArchive.latestId()==2);
   go();assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().lateralRaises==1);
   go();assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().lateralRaises==1);
+  openErase();next();advanceA(2200);
+  assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().lateralRaises==1);
   next();assert(menu==NORMAL && session.state==IDLE && sessionArchive.latestId()==2);
   Serial.connected=true;Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("A_UNWELL,1,0,1\n")!=std::string::npos);
@@ -166,7 +177,7 @@ int main(int argc,char** argv){
   beginAttempt();go();assert(session.state==PAUSED);go();finish();
   assert(session.state==DONE && sessionArchive.latestId()==2);
   Serial.space=64;Serial.output.clear();commandA("version\n");
-  assert(Serial.output=="# DEVICE,part_a,A2.1\n");
+  assert(Serial.output=="# DEVICE,part_a,A2.2\n");
   Serial.output.clear();commandA("history\n");
   assert(Serial.output.find("# ASAVED,")==0 && Serial.output.find("# END_A_HISTORY\n")!=std::string::npos);
   assert(Serial.output.find("ASAVED,2,lateral_raises,")!=std::string::npos);
@@ -182,7 +193,8 @@ int main(int argc,char** argv){
   assert(Serial.output.find("pause_before_history")!=std::string::npos);
   go();finish();
   // Serial erase also retains the current DONE result and returns to normal UI.
-  commandA("erase CONFIRM\n");assert(menu==NOTICE && sessionArchive.latestId()==0);
+  assert(sessionArchive.addSymptom(0));
+  commandA("erase CONFIRM\n");assert(menu==NOTICE && sessionArchive.latestId()==0 && sessionArchive.symptoms().total()==0);
   advanceA(2200);assert(menu==NORMAL && session.state==DONE);
   // Pulse fault is isolated: UI/session work even with a missing sensor.
   fakeWireError=2;advanceA(1200);assert(!pulseSensorReady);
@@ -205,6 +217,17 @@ int main(int argc,char** argv){
   beginAttempt();fakeAnalog[Y_PIN]=612;advanceA(250);assert(latRaiseDetected);
   go();fakeAnalog[Y_PIN]=512;advanceA(350);go();advanceA(350);
   assert(repCount==0 && !latRaiseDetected);finish();
+  // Reset directly from the report screen, then read both zero counts over COM.
+  assert(sessionArchive.addSymptom(0));
+  beginAttempt();go();press(EXERCISE_BUTTON,2200);go();go();
+  assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().total()==2);
+  openErase();go();advanceA(100);
+  assert(lcd.rows[0].find("HISTORY CLEARED")==0 && lcd.rows[1].find("Unwell: 0")==0);
+  advanceA(2200);assert(menu==NORMAL && session.state==IDLE);
+  Serial.connected=true;Serial.output.clear();commandA("history\n");
+  assert(Serial.output.find(",0,0\n")!=std::string::npos && Serial.output.find("# No saved A sessions\n")!=std::string::npos);
+  beginAttempt();go();press(EXERCISE_BUTTON,2200);go();go();
+  assert(menu==SYMPTOM_RESULT && sessionArchive.symptoms().total()==1);
   // Unsigned clock arithmetic across wrap, independently of the fake boot.
   parta::Session wrapped;wrapped.reset(UINT32_MAX-200);wrapped.state=RUNNING;
   wrapped.tick(100);assert(wrapped.active==301);

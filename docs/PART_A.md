@@ -1,12 +1,12 @@
-# Part A A2.0 — build, controls and testing
+# Part A A2.2 — build, controls and testing
 
-This version replaces the A1.x control/session implementation with explicit states, following the approach used by Part B. It targets the **Uno R4 Minima**. The team's squat/lateral-raise criteria, pin mapping, saved-record format and app compatibility are retained. No physical board is connected to the development environment; the tests below must still be run on the prototype.
+Part A targets the **Uno R4 Minima**. A2.2 clears the unwell reports alongside the workout history and lets the operator start the erase from the report screen.
 
 ## Install and upload
 
 Install **LiquidCrystal by Arduino** and **SparkFun MAX3010x Pulse and Proximity Sensor Library** through Arduino IDE's Library Manager. MAX30105.h comes from that SparkFun library and is also used for MAX30102.
 
-Keep all four files together: PartA.ino, PartACore.h, PartASerial.h and PartASessions.h. Open PartA.ino, choose Arduino Uno R4 Minima and the board's port (**COM6** for the current prototype), and upload. Keep the accelerometer still during the roughly one-second startup calibration. The LCD then shows **SQ A2.0 READY** or **LAT A2.0 READY**.
+Keep all four files together: PartA.ino, PartACore.h, PartASerial.h and PartASessions.h. Open PartA.ino, choose Arduino Uno R4 Minima and the board's port (**COM6** for the current prototype), and upload. Keep the accelerometer still during the roughly one-second startup calibration. The LCD then shows **SQ A2.2 READY** or **LAT A2.2 READY**.
 
 ## Existing wiring
 
@@ -39,9 +39,9 @@ For exact stop timing, tap START to pause at the end of the exercise, then hold 
 
 ## History erase at any session state
 
-Hold both buttons together for 3 seconds until **ERASE HISTORY?** appears. Release both. A fresh START confirms; EXERCISE cancels. The opening hold cannot confirm deletion.
+Hold both buttons together for 3 seconds until **ERASE HISTORY?** appears. You can open it from the **Report saved** screen. Release both, then tap START to confirm or EXERCISE to cancel. The cleared screen shows **Unwell: 0**.
 
-The menu pauses the current attempt. After two seconds of result feedback it returns to the previous state, excluding menu time; countdowns retain their remaining time. Current reps, active time and accepted-beat statistics stay in RAM. An unfinished movement must restart after the pause. Only the completed board archive is cleared. Exported CSVs and app participants/attempts are separate.
+The menu pauses the current attempt. After two seconds of result feedback it returns to the session state. Countdowns retain their remaining time. Current reps, active time and accepted-beat statistics stay in RAM. An unfinished movement must restart after the pause. Erase clears the board's completed sessions and both unwell counters. The app and exported CSVs keep their copies of already imported data.
 
 ## Detector criteria retained from the team sketch
 
@@ -68,10 +68,10 @@ Normal use produces **no continuous Serial output**. It does not require an open
 
 | Command | Result |
 |---|---|
-| version | # DEVICE,part_a,A2.0 |
+| version | # DEVICE,part_a,A2.2 |
 | status | Exercise, state, active milliseconds, reps, pulse-ready flag, START-pressed flag, EXERCISE-pressed flag |
-| history | Both exercises, using the existing ASAVED format |
-| erase CONFIRM | Clears completed history while not running/counting down |
+| history | Workout rows and unwell counts for both exercises |
+| erase CONFIRM | Clears saved workouts and unwell reports while stopped |
 
 History output is streamed in small chunks between button/sensor/display updates. A full or closed COM connection cannot turn the exporter into a wait loop. Running/countdown sessions must be paused or finished before history is read. A partial export never receives a success terminator. Opening a connection can reset a board, so finish/save before importing.
 
@@ -81,7 +81,7 @@ From the project root in PowerShell, with Serial Monitor closed:
 python tools/export_sessions.py --port COM6 --part-a --output ".\saved_sessions\saved_sessions_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
 ~~~
 
-The current Windows app's **Read COM port** and CSV import already accept this schema; no executable update is required for A2.0. Export does not erase saved rows. Saved sessions have archive IDs, not calendar dates.
+Use **Read COM port** in the Windows app to import workouts and unwell reports for the selected participant. Exporting leaves the board's archive intact. Saved sessions use archive IDs.
 
 ## Physical acceptance test
 
@@ -91,6 +91,6 @@ The current Windows app's **Read COM port** and CSV import already accept this s
 4. Export from COM6, then immediately start/pause/resume/save another attempt without unplugging/resetting. Export again and check the new row.
 5. Test pause → Cancel attempt, first choosing EX/no and then GO/yes. No discarded attempt should be saved.
 6. Open the both-button erase menu at READY, RUNNING, PAUSED and DONE. Cancel first, then confirm. Check saved history clears, current pending data stays, and the correct state returns.
-7. Power-cycle after saving and read history again. Do not use an unsaved attempt for the retention test.
+7. Record an unwell report for each exercise. Erase from **Report saved**, check **Unwell: 0**, then power-cycle and read history again. The next report should start at 1.
 
 If a control is unresponsive, record the exact LCD state and send version and status through Serial Monitor. Status includes the two raw button flags to distinguish input from state-transition problems.

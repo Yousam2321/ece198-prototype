@@ -105,10 +105,15 @@ public:
   bool clear(){
     if(memory.length()<916)return false;
     uint32_t old=historyId();
-    // One generation change clears attempts and symptom counts together.
     if(old==UINT32_MAX || !writeGeneration(old+1))return false;
+    // Commit the new generation first, so interrupted erases cannot bring back
+    // old reports. Clear both report slots as well as the workout records.
+    if(memory.length()>=SYMPTOMS_BASE+2*SYMPTOM_BYTES){
+      for(int i=SYMPTOMS_BASE;i<SYMPTOMS_BASE+2*SYMPTOM_BYTES;++i)memory.update(i,0);
+      for(int i=SYMPTOMS_BASE;i<SYMPTOMS_BASE+2*SYMPTOM_BYTES;++i)if(memory.read(i)!=0)return false;
+    }
     for(int i=0;i<CAPACITY*RECORD_BYTES;++i)memory.update(i,0);
     for(int i=0;i<CAPACITY*RECORD_BYTES;++i)if(memory.read(i)!=0)return false;
-    return true;
+    return historyId()==old+1;
   }
 };

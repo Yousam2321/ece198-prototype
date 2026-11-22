@@ -1,5 +1,5 @@
 /*
- * ECE198 Part A A2.1 -- explicit session controller, as used by Part B.
+ * ECE198 Part A A2.2 -- explicit session controller, as used by Part B.
  * Arduino Uno R4 Minima. Existing wiring and exercise criteria are retained.
  * START D2 -> GND; EXERCISE D3 -> GND (INPUT_PULLUP).
  * MMA7361: X=A0, Y=A1, Z=A2. LCD: RS=7, E=8, data=9,10,11,12.
@@ -29,7 +29,7 @@
 #endif
 
 using namespace parta;
-#define PART_A_VERSION "A2.1"
+#define PART_A_VERSION "A2.2"
 const uint8_t START_BUTTON=2, EXERCISE_BUTTON=3;
 const uint8_t X_PIN=A0,Y_PIN=A1,Z_PIN=A2;
 LiquidCrystal lcd(7,8,9,10,11,12);
@@ -63,6 +63,7 @@ uint8_t rates[5]={},rateSpot=0,validRates=0;
 // The original state is restored only after the menu/result has finished.
 enum Menu : uint8_t { NORMAL, ERASE_HOLD, ERASE_CONFIRM, CANCEL_CONFIRM, SYMPTOM_PROMPT, SYMPTOM_RESULT, NOTICE };
 Menu menu=NORMAL;
+Menu menuReturn=NORMAL;
 State menuReturnState=IDLE;
 Key menuStart,menuExercise;
 bool menuArmed=false,chordTiming=false;
@@ -122,13 +123,15 @@ void startOrToggle(uint32_t now){
 }
 void enterMenu(Menu next,uint32_t now){
   session.tick(now);menuReturnState=session.state;menuAt=now;
+  menuReturn=menu;
   session.state=PAUSED;menu=next;menuArmed=false;chordTiming=false;
   menuStart.suppress(true,now);menuExercise.suppress(true,now);
   resetDetectors();
 }
 void leaveMenu(uint32_t now){
   if(menuReturnState==COUNTDOWN)session.countdownAt+=uint32_t(now-menuAt);
-  session.state=menuReturnState;session.last=now;menu=NORMAL;
+  session.state=menuReturnState;session.last=now;menu=menuReturn;menuReturn=NORMAL;
+  menuArmed=false;
   startKey.suppress(digitalRead(START_BUTTON)==LOW,now);
   exerciseKey.suppress(digitalRead(EXERCISE_BUTTON)==LOW,now);
   resetDetectors();
@@ -139,13 +142,13 @@ void showNotice(const char* top,const char* bottom,uint32_t now){
 bool eraseSavedHistory(){
   abortReply();
   bool ok=sessionArchive.clear();
-  if(ok){saved=false;savedId=0;} // A DONE result is retained on screen, not re-saved.
+  if(ok){saved=false;savedId=0;menuReturn=NORMAL;} // A DONE result is retained on screen, not re-saved.
   return ok;
 }
 void serviceButtons(uint32_t now){
   bool go=digitalRead(START_BUTTON)==LOW,ex=digitalRead(EXERCISE_BUTTON)==LOW;
   if(calibrating){startKey.suppress(go,now);exerciseKey.suppress(ex,now);return;}
-  if(menu==NORMAL && go && ex)enterMenu(ERASE_HOLD,now);
+  if((menu==NORMAL || menu==SYMPTOM_RESULT) && go && ex)enterMenu(ERASE_HOLD,now);
   if(menu!=NORMAL){
     startKey.suppress(go,now);exerciseKey.suppress(ex,now);
     if(menu==ERASE_HOLD){
@@ -366,7 +369,7 @@ void handleCommand(const char* value,uint32_t now){
     exportSymptoms=sessionArchive.symptoms();
     return;
   }
-  if(!strcmp(value,"erase CONFIRM") && !calibrating && menu==NORMAL &&
+  if(!strcmp(value,"erase CONFIRM") && !calibrating && (menu==NORMAL || menu==SYMPTOM_RESULT) &&
       session.state!=RUNNING && session.state!=COUNTDOWN && session.state!=SAVING){
     enterMenu(NOTICE,now);
     serialEraseSucceeded=eraseSavedHistory();

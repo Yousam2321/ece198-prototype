@@ -4,11 +4,11 @@ Two independent Arduino programs and one Windows results app. Keep each sketch f
 
 | Program | Exercises | Hardware / libraries |
 |---|---|---|
-| `PartA/PartA.ino` — A2.1 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
+| `PartA/PartA.ino` — A2.2 | Squats, lateral raises | Uno R4 Minima, analog accelerometer, 16×2 parallel LCD, START/EXERCISE buttons, MAX30102; LiquidCrystal and SparkFun MAX3010x |
 | `HoldStation/HoldStation.ino` — B2.8 | Wall sit, plank, chest press | Uno R3, HC-SR04, OLED, GO/MODE buttons; U8g2 |
 | `desktop/results_app.py` | Results from both boards | Windows executable, or Python with `requirements.txt` |
 
-Part A A2.1 adds symptom reporting to the A2.0 session controller. It retains the team's movement thresholds (including lateral raise 25), sensor pins, pulse data and saved workout format.
+Part A A2.2 clears both unwell counters during history erase and accepts the erase shortcut from the report screen. It retains the team's movement thresholds (including lateral raise 25), sensor pins, pulse data and saved workout format.
 
 ## Upload Part A
 
@@ -81,13 +81,15 @@ for the selected exercise and shows the station total. Press MODE to
 acknowledge the message. The cancelled attempt does not count as a completed
 exercise.
 
-## Part A symptom reports — A2.1
+## Part A symptom reports — A2.2
 
 Pause with START, hold EXERCISE for 2 seconds, then confirm **Cancel attempt**
 with START. Answer **Feeling unwell?** with START for Yes or EXERCISE for No.
 Yes saves a report for squats or lateral raises. Press EXERCISE to dismiss the
-saved count. The cancelled workout is discarded. Confirming **Erase history**
-clears the board's saved sessions and symptom counts.
+saved count. The cancelled workout is discarded. To erase from the report screen
+or a regular session screen, hold START and EXERCISE together for 3 seconds,
+release both, and tap START. The confirmation shows **HISTORY CLEARED / Unwell: 0**
+after the board clears the saved sessions and both symptom counters.
 
 In the Windows app, open the participant and use **Read COM port** for each
 board before the next participant uses it. Each preview shows the saved reports
